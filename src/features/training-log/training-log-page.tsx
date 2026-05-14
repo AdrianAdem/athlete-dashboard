@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Play, ChevronLeft, Plus, Check, Trophy, Flame, X, SkipForward, Minus } from "lucide-react";
+import { Play, ChevronLeft, Plus, Check, Trophy, Flame, X, SkipForward, Minus, Calendar } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { USER_ID } from "@/lib/constants";
 import { todayString } from "@/lib/utils";
@@ -40,6 +40,7 @@ export function TrainingLogPage() {
   const timerRef = useRef<ReturnType<typeof setInterval>>(undefined);
   const workoutStartTime = useRef<Date | null>(null);
   const [summary, setSummary] = useState<WorkoutSummary | null>(null);
+  const [history, setHistory] = useState<{ date: string; exercises: { name: string; sets: SetLog[] }[] }[]>([]);
 
   const totalSetsCount = exercises.reduce((sum, ex) => sum + ex.sets_data.length, 0);
   const completedSetsCount = exercises.reduce(
@@ -55,6 +56,20 @@ export function TrainingLogPage() {
     if (exs) {
       setAvailableDays([...new Set((exs as TrainingExercise[]).map((e) => e.day_label))]);
     }
+
+    const { data: logs } = await supabase
+      .from("training_logs").select("date, sets_completed, training_exercises(name)")
+      .eq("user_id", USER_ID).order("date", { ascending: false }).limit(50);
+    if (logs) {
+      const grouped = new Map<string, { name: string; sets: SetLog[] }[]>();
+      for (const log of logs as { date: string; sets_completed: SetLog[]; training_exercises: { name: string } | null }[]) {
+        const arr = grouped.get(log.date) ?? [];
+        arr.push({ name: log.training_exercises?.name ?? "?", sets: log.sets_completed });
+        grouped.set(log.date, arr);
+      }
+      setHistory(Array.from(grouped, ([date, exercises]) => ({ date, exercises })));
+    }
+
     setLoading(false);
   }, []);
 
@@ -249,7 +264,10 @@ export function TrainingLogPage() {
     setDayLabel("");
   };
 
-  const closeSummary = () => setSummary(null);
+  const closeSummary = () => {
+    setSummary(null);
+    fetchActivePlan();
+  };
 
   if (loading) return <div className="flex min-h-screen items-center justify-center text-neutral-500">Laden...</div>;
 
@@ -342,6 +360,33 @@ export function TrainingLogPage() {
             >
               <Play className="h-4 w-4" /> Workout starten
             </button>
+          </div>
+        )}
+
+        {/* Workout History */}
+        {history.length > 0 && (
+          <div className="space-y-3">
+            <h2 className="text-sm font-medium text-neutral-400">Letzte Workouts</h2>
+            {history.map((day) => (
+              <div key={day.date} className="rounded-xl bg-card p-4 space-y-2">
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <Calendar className="h-4 w-4 text-neutral-500" />
+                  {new Date(day.date + "T00:00:00").toLocaleDateString("de-DE", { weekday: "short", day: "numeric", month: "short" })}
+                </div>
+                {day.exercises.map((ex, i) => (
+                  <div key={i} className="ml-6 text-xs text-neutral-400">
+                    <span className="text-neutral-300">{ex.name}</span>
+                    {" — "}
+                    {ex.sets.map((s, j) => (
+                      <span key={j}>
+                        {s.weight_kg}kg×{s.reps}
+                        {j < ex.sets.length - 1 ? ", " : ""}
+                      </span>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            ))}
           </div>
         )}
       </div>
