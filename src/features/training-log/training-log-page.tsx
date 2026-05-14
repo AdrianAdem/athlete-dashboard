@@ -62,7 +62,7 @@ export function TrainingLogPage() {
       .eq("user_id", USER_ID).order("date", { ascending: false }).limit(50);
     if (logs) {
       const grouped = new Map<string, { name: string; sets: SetLog[] }[]>();
-      for (const log of logs as { date: string; sets_completed: SetLog[]; training_exercises: { name: string } | null }[]) {
+      for (const log of logs as unknown as { date: string; sets_completed: SetLog[]; training_exercises: { name: string } | null }[]) {
         const arr = grouped.get(log.date) ?? [];
         arr.push({ name: log.training_exercises?.name ?? "?", sets: log.sets_completed });
         grouped.set(log.date, arr);
