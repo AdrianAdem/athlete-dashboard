@@ -224,7 +224,7 @@ export function NutritionWaterPage() {
   if (loading) return <div className="flex min-h-screen items-center justify-center text-neutral-500">Laden...</div>;
 
   return (
-    <div className="space-y-4 p-4 pb-24">
+    <div className="space-y-4 p-4 pb-32">
       <h1 className="text-2xl font-bold">Ernährung</h1>
 
       {/* Total overview ring */}
@@ -273,7 +273,7 @@ export function NutritionWaterPage() {
           }`}>
           <Droplets className="h-5 w-5" strokeWidth={1.5} />
           <span className="text-[10px] font-medium">Wasser</span>
-          <span className="text-[10px]">{(waterTotalMl / 1000).toFixed(1)}L</span>
+          <span className="text-[10px]">{waterTotalMl}ml</span>
         </button>
       </div>
 
@@ -282,8 +282,8 @@ export function NutritionWaterPage() {
           <div className="flex flex-col items-center gap-4 rounded-xl bg-card p-6">
             <RingProgress value={waterTotalMl} max={waterGoalMl} size={120} strokeWidth={8} color="#3b82f6">
               <Droplets className="h-5 w-5 text-blue-400" />
-              <span className="text-lg font-bold">{(waterTotalMl / 1000).toFixed(1)}L</span>
-              <span className="text-[10px] text-neutral-500">von {(waterGoalMl / 1000).toFixed(1)}L</span>
+              <span className="text-lg font-bold">{waterTotalMl}ml</span>
+              <span className="text-[10px] text-neutral-500">von {waterGoalMl}ml</span>
             </RingProgress>
             <div className="flex gap-2">
               {[250, 500, 750].map((ml) => (
