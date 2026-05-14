@@ -29,13 +29,13 @@ export function Layout() {
   })();
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
-      <main className="flex-1 overflow-y-auto pb-28">
+    <div className="flex min-h-screen flex-col bg-background pt-[env(safe-area-inset-top,0px)]">
+      <main className="flex-1 overflow-y-auto pb-24">
         <Outlet />
       </main>
 
       <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-border bg-background/95 backdrop-blur pb-[env(safe-area-inset-bottom,8px)]">
-        <div className="flex h-20 items-center justify-around">
+        <div className="flex h-[4.5rem] items-center justify-around">
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const active = activeTab === tab.path;
