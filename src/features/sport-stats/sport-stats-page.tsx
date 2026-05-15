@@ -152,18 +152,18 @@ export function SportStatsPage() {
     }
 
     // Fetch exercises for strength chart
-    const { data: plans } = await supabase
+    const { data: activePlans } = await supabase
       .from("training_plans")
       .select("id")
       .eq("user_id", USER_ID)
-      .eq("is_active", true)
-      .single();
+      .eq("is_active", true);
 
-    if (plans) {
+    if (activePlans && activePlans.length > 0) {
+      const planIds = activePlans.map((p) => p.id);
       const { data: exs } = await supabase
         .from("training_exercises")
         .select("*")
-        .eq("plan_id", plans.id);
+        .in("plan_id", planIds);
       if (exs) {
         setExercises(exs as TrainingExercise[]);
         if (exs.length > 0 && !selectedExercise) {

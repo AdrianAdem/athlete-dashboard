@@ -49,10 +49,11 @@ export function TrainingLogPage() {
 
   const fetchActivePlan = useCallback(async () => {
     const { data: plans } = await supabase
-      .from("training_plans").select("id").eq("user_id", USER_ID).eq("is_active", true).single();
-    if (!plans) { setLoading(false); return; }
+      .from("training_plans").select("id").eq("user_id", USER_ID).eq("is_active", true);
+    if (!plans || plans.length === 0) { setLoading(false); return; }
+    const planIds = plans.map((p) => p.id);
     const { data: exs } = await supabase
-      .from("training_exercises").select("*").eq("plan_id", plans.id).order("order_index");
+      .from("training_exercises").select("*").in("plan_id", planIds).order("order_index");
     if (exs) {
       setAvailableDays([...new Set((exs as TrainingExercise[]).map((e) => e.day_label))]);
     }
@@ -94,10 +95,11 @@ export function TrainingLogPage() {
   const startWorkout = async () => {
     if (!dayLabel) return;
     const { data: plans } = await supabase
-      .from("training_plans").select("id").eq("user_id", USER_ID).eq("is_active", true).single();
-    if (!plans) return;
+      .from("training_plans").select("id").eq("user_id", USER_ID).eq("is_active", true);
+    if (!plans || plans.length === 0) return;
+    const planIds = plans.map((p) => p.id);
     const { data: exs } = await supabase
-      .from("training_exercises").select("*").eq("plan_id", plans.id).eq("day_label", dayLabel).order("order_index");
+      .from("training_exercises").select("*").in("plan_id", planIds).eq("day_label", dayLabel).order("order_index");
     if (!exs) return;
 
     const exercisesWithPrev: WorkoutExercise[] = await Promise.all(
