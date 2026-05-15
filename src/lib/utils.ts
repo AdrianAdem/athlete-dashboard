@@ -17,3 +17,10 @@ export function formatDate(date: Date | string): string {
 export function todayString(): string {
   return new Date().toISOString().split("T")[0];
 }
+
+export function isRoutineActiveToday(startDate: string | null, endDate: string | null): boolean {
+  const today = todayString();
+  if (startDate && today < startDate) return false;
+  if (endDate && today > endDate) return false;
+  return true;
+}

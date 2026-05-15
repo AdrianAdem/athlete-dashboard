@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { USER_ID } from "@/lib/constants";
-import { todayString, cn } from "@/lib/utils";
+import { todayString, cn, isRoutineActiveToday } from "@/lib/utils";
 import type { DailyTodo, NutritionLog, WaterLog, WeightLog, Routine, RoutineLog } from "@/types/database";
 
 export function DashboardPage() {
@@ -51,7 +51,8 @@ export function DashboardPage() {
       const jsDay = new Date().getDay();
       const weekday = jsDay === 0 ? 6 : jsDay - 1;
       const todayRoutines = (routinesData as Routine[]).filter(
-        (r) => !r.weekdays || r.weekdays.length === 0 || r.weekdays.includes(weekday)
+        (r) => (!r.weekdays || r.weekdays.length === 0 || r.weekdays.includes(weekday))
+          && isRoutineActiveToday(r.start_date, r.end_date)
       );
       const logsRes = await Promise.all(
         todayRoutines.map((r) =>

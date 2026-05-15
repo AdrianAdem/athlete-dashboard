@@ -126,6 +126,8 @@ export interface Routine {
   area: RoutineArea;
   category: RoutineCategory;
   weekdays: number[] | null;
+  start_date: string | null;
+  end_date: string | null;
   is_active: boolean;
   created_at: string;
 }

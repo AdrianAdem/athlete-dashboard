@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Plus, Check, Trash2, ChevronDown, ChevronUp, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { USER_ID } from "@/lib/constants";
-import { todayString } from "@/lib/utils";
+import { todayString, isRoutineActiveToday } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import type { SportTodo, Routine, RoutineItem, RoutineLog, TodoPriority, RoutineCategory } from "@/types/database";
 
@@ -46,6 +46,8 @@ export function SportTodosPage() {
     { name: "" },
   ]);
   const [newRoutineWeekdays, setNewRoutineWeekdays] = useState<number[]>([]);
+  const [newRoutineStartDate, setNewRoutineStartDate] = useState("");
+  const [newRoutineEndDate, setNewRoutineEndDate] = useState("");
 
   // Add todo state
   const [showAddTodo, setShowAddTodo] = useState(false);
@@ -65,7 +67,8 @@ export function SportTodosPage() {
       const jsDay = new Date().getDay();
       const weekday = jsDay === 0 ? 6 : jsDay - 1;
       const routinesData = (routineRes.data as Routine[]).filter(
-        (r) => !r.weekdays || r.weekdays.length === 0 || r.weekdays.includes(weekday)
+        (r) => (!r.weekdays || r.weekdays.length === 0 || r.weekdays.includes(weekday))
+          && isRoutineActiveToday(r.start_date, r.end_date)
       );
       const withItems: RoutineWithItems[] = await Promise.all(
         routinesData.map(async (r) => {
@@ -125,6 +128,8 @@ export function SportTodosPage() {
       .insert({
         user_id: USER_ID, name: newRoutineName.trim(), category: newRoutineCategory, area: "sport",
         weekdays: newRoutineWeekdays.length > 0 ? newRoutineWeekdays : null,
+        start_date: newRoutineStartDate || null,
+        end_date: newRoutineEndDate || null,
       })
       .select().single();
 
@@ -143,6 +148,8 @@ export function SportTodosPage() {
       setNewRoutineCategory("mobility");
       setNewRoutineItems([{ name: "" }]);
       setNewRoutineWeekdays([]);
+      setNewRoutineStartDate("");
+      setNewRoutineEndDate("");
       setShowAddRoutine(false);
       fetchData();
     }
@@ -320,6 +327,15 @@ export function SportTodosPage() {
                       {d}
                     </button>
                   ))}
+                </div>
+              </div>
+              <div>
+                <p className="text-xs text-neutral-500 mb-1">Zeitraum (leer = unbegrenzt):</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <Input type="date" value={newRoutineStartDate} onChange={(e) => setNewRoutineStartDate(e.target.value)}
+                    placeholder="Von" className="bg-neutral-800 border-none text-xs" />
+                  <Input type="date" value={newRoutineEndDate} onChange={(e) => setNewRoutineEndDate(e.target.value)}
+                    placeholder="Bis" className="bg-neutral-800 border-none text-xs" />
                 </div>
               </div>
               <p className="text-xs text-neutral-500">Schritte:</p>
