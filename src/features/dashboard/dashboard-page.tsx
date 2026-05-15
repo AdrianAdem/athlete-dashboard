@@ -7,7 +7,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import { USER_ID } from "@/lib/constants";
 import { todayString, cn } from "@/lib/utils";
-import type { DailyTodo, NutritionLog, WaterLog, WeightLog } from "@/types/database";
+import type { DailyTodo, NutritionLog, WaterLog, WeightLog, Routine, RoutineLog } from "@/types/database";
 
 export function DashboardPage() {
   const navigate = useNavigate();
@@ -16,6 +16,7 @@ export function DashboardPage() {
   const [waterTotal, setWaterTotal] = useState(0);
   const [latestWeight, setLatestWeight] = useState<WeightLog | null>(null);
   const [trainingCount, setTrainingCount] = useState(0);
+  const [routineStats, setRoutineStats] = useState<{ total: number; done: number; items: { name: string; done: boolean; area: string }[] }>({ total: 0, done: 0, items: [] });
   const [loading, setLoading] = useState(true);
 
   const fetchDashboard = useCallback(async () => {
@@ -42,6 +43,32 @@ export function DashboardPage() {
     }
     if (weightRes.data?.[0]) setLatestWeight(weightRes.data[0] as WeightLog);
     if (trainingRes.data) setTrainingCount(trainingRes.data.length);
+
+    // Fetch routines
+    const { data: routinesData } = await supabase
+      .from("routines").select("id, name, area, weekdays").eq("user_id", USER_ID).eq("is_active", true);
+    if (routinesData) {
+      const jsDay = new Date().getDay();
+      const weekday = jsDay === 0 ? 6 : jsDay - 1;
+      const todayRoutines = (routinesData as Routine[]).filter(
+        (r) => !r.weekdays || r.weekdays.length === 0 || r.weekdays.includes(weekday)
+      );
+      const logsRes = await Promise.all(
+        todayRoutines.map((r) =>
+          supabase.from("routine_logs").select("completed").eq("routine_id", r.id).eq("user_id", USER_ID).eq("date", today).maybeSingle()
+        )
+      );
+      const items = todayRoutines.map((r, i) => ({
+        name: r.name,
+        done: !!(logsRes[i].data as RoutineLog | null)?.completed,
+        area: r.area,
+      }));
+      setRoutineStats({
+        total: items.length,
+        done: items.filter((i) => i.done).length,
+        items,
+      });
+    }
 
     setLoading(false);
   }, []);
@@ -102,6 +129,34 @@ export function DashboardPage() {
           onClick={() => navigate("/sport/gewicht")}
         />
       </div>
+
+      {/* Routines section */}
+      {routineStats.total > 0 && (
+        <div>
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-lg font-bold">Routinen</h2>
+            <span className="text-xs text-neutral-500">{routineStats.done}/{routineStats.total} erledigt</span>
+          </div>
+          <div className="space-y-2">
+            {routineStats.items.map((r, i) => (
+              <button key={i}
+                onClick={() => navigate(r.area === "sport" ? "/sport/todos" : "/alltag/todos")}
+                className={cn(
+                  "flex w-full items-center gap-3 rounded-xl bg-card p-3 text-left transition-all active:scale-[0.98]",
+                  r.done && "opacity-50"
+                )}>
+                {r.done ? (
+                  <CheckCircle2 className="h-5 w-5 shrink-0 text-green-500" />
+                ) : (
+                  <Circle className="h-5 w-5 shrink-0 text-neutral-600" />
+                )}
+                <span className={cn("text-sm", r.done && "line-through")}>{r.name}</span>
+                <span className="ml-auto text-[10px] text-neutral-600">{r.area === "sport" ? "Sport" : "Alltag"}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Todos section */}
       <div>
