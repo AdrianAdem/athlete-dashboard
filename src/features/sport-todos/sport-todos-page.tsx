@@ -332,10 +332,12 @@ export function SportTodosPage() {
               <div>
                 <p className="text-xs text-neutral-500 mb-1">Zeitraum (leer = unbegrenzt):</p>
                 <div className="grid grid-cols-2 gap-2">
-                  <Input type="date" value={newRoutineStartDate} onChange={(e) => setNewRoutineStartDate(e.target.value)}
-                    placeholder="Von" className="bg-neutral-800 border-none text-xs" />
-                  <Input type="date" value={newRoutineEndDate} onChange={(e) => setNewRoutineEndDate(e.target.value)}
-                    placeholder="Bis" className="bg-neutral-800 border-none text-xs" />
+                  <Input type="text" value={newRoutineStartDate} onChange={(e) => setNewRoutineStartDate(e.target.value)}
+                    placeholder="Von (JJJJ-MM-TT)" className="bg-neutral-800 border-none text-xs"
+                    onFocus={(e) => { e.target.type = "date"; }} onBlur={(e) => { if (!e.target.value) e.target.type = "text"; }} />
+                  <Input type="text" value={newRoutineEndDate} onChange={(e) => setNewRoutineEndDate(e.target.value)}
+                    placeholder="Bis (JJJJ-MM-TT)" className="bg-neutral-800 border-none text-xs"
+                    onFocus={(e) => { e.target.type = "date"; }} onBlur={(e) => { if (!e.target.value) e.target.type = "text"; }} />
                 </div>
               </div>
               <p className="text-xs text-neutral-500">Schritte:</p>
