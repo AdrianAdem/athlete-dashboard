@@ -234,7 +234,7 @@ export function SportTodosPage() {
                   <div className="flex-1 text-left">
                     <p className="text-sm font-semibold">{routine.name}</p>
                     <p className="text-xs text-neutral-500">
-                      {itemsDone}/{routine.items.length} Übungen · {categoryLabels[routine.category]}
+                      {itemsDone}/{routine.items.length} Schritte · {categoryLabels[routine.category]}
                     </p>
                   </div>
                   {/* Mini progress */}
@@ -298,7 +298,7 @@ export function SportTodosPage() {
               <Input value={newRoutineName} onChange={(e) => setNewRoutineName(e.target.value)}
                 placeholder="Name (z.B. Scapula Routine)" className="bg-neutral-800 border-none" />
               <div className="flex flex-wrap gap-1">
-                {(["kraft", "cardio", "mobility", "sonstiges"] as RoutineCategory[]).map((cat) => (
+                {(["kraft", "cardio", "mobility", "gesundheit", "morgenroutine", "abendroutine", "sonstiges"] as RoutineCategory[]).map((cat) => (
                   <button key={cat} onClick={() => setNewRoutineCategory(cat)}
                     className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
                       newRoutineCategory === cat ? "bg-white text-black" : "bg-neutral-800 text-neutral-400"
@@ -322,26 +322,30 @@ export function SportTodosPage() {
                   ))}
                 </div>
               </div>
-              <p className="text-xs text-neutral-500">Übungen:</p>
+              <p className="text-xs text-neutral-500">Schritte:</p>
               {newRoutineItems.map((item, idx) => (
                 <div key={idx} className="flex items-center gap-2">
                   <Input value={item.name} onChange={(e) => {
                     const updated = [...newRoutineItems];
                     updated[idx] = { ...updated[idx], name: e.target.value };
                     setNewRoutineItems(updated);
-                  }} placeholder={`Übung ${idx + 1}`} className="bg-neutral-800 border-none flex-1" />
-                  <Input type="number" placeholder="Sets" className="w-16 bg-neutral-800 border-none"
-                    value={item.sets ?? ""} onChange={(e) => {
-                      const updated = [...newRoutineItems];
-                      updated[idx] = { ...updated[idx], sets: Number(e.target.value) || undefined };
-                      setNewRoutineItems(updated);
-                    }} />
-                  <Input type="number" placeholder="Reps" className="w-16 bg-neutral-800 border-none"
-                    value={item.reps ?? ""} onChange={(e) => {
-                      const updated = [...newRoutineItems];
-                      updated[idx] = { ...updated[idx], reps: Number(e.target.value) || undefined };
-                      setNewRoutineItems(updated);
-                    }} />
+                  }} placeholder={`Schritt ${idx + 1}`} className="bg-neutral-800 border-none flex-1" />
+                  {["kraft", "cardio", "mobility"].includes(newRoutineCategory) && (
+                    <>
+                      <Input type="number" placeholder="Sets" className="w-16 bg-neutral-800 border-none"
+                        value={item.sets ?? ""} onChange={(e) => {
+                          const updated = [...newRoutineItems];
+                          updated[idx] = { ...updated[idx], sets: Number(e.target.value) || undefined };
+                          setNewRoutineItems(updated);
+                        }} />
+                      <Input type="number" placeholder="Reps" className="w-16 bg-neutral-800 border-none"
+                        value={item.reps ?? ""} onChange={(e) => {
+                          const updated = [...newRoutineItems];
+                          updated[idx] = { ...updated[idx], reps: Number(e.target.value) || undefined };
+                          setNewRoutineItems(updated);
+                        }} />
+                    </>
+                  )}
                   {newRoutineItems.length > 1 && (
                     <button onClick={() => setNewRoutineItems(newRoutineItems.filter((_, i) => i !== idx))}>
                       <X className="h-4 w-4 text-neutral-600" />
@@ -351,7 +355,7 @@ export function SportTodosPage() {
               ))}
               <button onClick={() => setNewRoutineItems([...newRoutineItems, { name: "" }])}
                 className="flex items-center gap-1 text-xs text-neutral-400">
-                <Plus className="h-3 w-3" /> Übung hinzufügen
+                <Plus className="h-3 w-3" /> Schritt hinzufügen
               </button>
               <button onClick={createRoutine} disabled={!newRoutineName.trim()}
                 className="w-full rounded-xl bg-white py-2.5 text-sm font-semibold text-black disabled:opacity-30 active:scale-[0.98]">
