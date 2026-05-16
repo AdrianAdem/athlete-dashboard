@@ -22,6 +22,14 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/chat/, ""),
       },
+      // Food lookup Edge Function
+      "/api/food": {
+        target: process.env.VITE_SUPABASE_URL
+          ? `${process.env.VITE_SUPABASE_URL}/functions/v1/food-lookup`
+          : "http://localhost:54321/functions/v1/food-lookup",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/food/, ""),
+      },
     },
   },
 });
