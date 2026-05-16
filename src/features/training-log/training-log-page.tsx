@@ -148,7 +148,7 @@ export function TrainingLogPage() {
         </div>
 
         {/* Rest Timer - Compact Display */}
-        <div className="flex shrink-0 flex-col items-center justify-center px-4 py-4">
+        <div className="flex shrink-0 flex-col items-center justify-center px-4 py-2">
           {workout.timerActive || workout.restTimer > 0 ? (
             <>
               <p className="text-[4rem] font-bold leading-none tracking-tight tabular-nums">
@@ -192,7 +192,7 @@ export function TrainingLogPage() {
 
         {/* Exercise Card - Bottom Sheet Style */}
         {currentEx && (
-          <div className="flex-1 rounded-t-3xl bg-neutral-900 px-4 pb-20 pt-4 space-y-3 overflow-y-auto">
+          <div className="flex-1 rounded-t-3xl bg-neutral-900 px-4 pb-4 pt-4 space-y-3 overflow-y-auto mb-14">
             <div className="flex justify-center">
               <div className="h-1 w-10 rounded-full bg-neutral-700" />
             </div>
