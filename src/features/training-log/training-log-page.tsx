@@ -130,9 +130,9 @@ export function TrainingLogPage() {
   if (workout.workoutActive) {
     const currentEx = workout.exercises[workout.currentExIdx];
     return (
-      <div className="flex min-h-screen flex-col bg-black">
+      <div className="flex h-[100dvh] flex-col bg-black overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3">
+        <div className="flex shrink-0 items-center justify-between px-4 py-3">
           <button onClick={workout.goToPrevExercise} disabled={workout.currentExIdx === 0}
             className="rounded-full bg-neutral-800 p-2 disabled:opacity-30">
             <ChevronLeft className="h-5 w-5" />
@@ -192,7 +192,7 @@ export function TrainingLogPage() {
 
         {/* Exercise Card - Bottom Sheet Style */}
         {currentEx && (
-          <div className="rounded-t-3xl bg-neutral-900 px-4 pb-24 pt-4 space-y-3">
+          <div className="rounded-t-3xl bg-neutral-900 px-4 pb-4 pt-4 space-y-3 overflow-y-auto max-h-[55dvh]">
             <div className="flex justify-center">
               <div className="h-1 w-10 rounded-full bg-neutral-700" />
             </div>
