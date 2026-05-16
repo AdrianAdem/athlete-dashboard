@@ -416,33 +416,31 @@ export function NutritionWaterPage() {
 
   return (
     <div className="space-y-4 p-4 pb-32">
-      {/* Date navigation */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-bold">Ernährung</h1>
-        <div className="flex items-center gap-2">
-          <button onClick={() => setSelectedDate(shiftDate(selectedDate, -1))}
-            className="rounded-lg bg-card p-1.5 transition-all active:scale-90">
-            <ChevronLeft className="h-4 w-4 text-neutral-400" />
-          </button>
-          <button onClick={() => setSelectedDate(todayString())}
-            className="flex items-center gap-1.5 rounded-lg bg-card px-3 py-1.5">
-            <Calendar className="h-3.5 w-3.5 text-neutral-500" />
-            <span className="text-xs font-medium">{formatDateLabel(selectedDate)}</span>
-          </button>
-          <button onClick={() => setSelectedDate(shiftDate(selectedDate, 1))}
-            className={`rounded-lg bg-card p-1.5 transition-all active:scale-90 ${isToday ? "opacity-30 pointer-events-none" : ""}`}>
-            <ChevronRight className="h-4 w-4 text-neutral-400" />
-          </button>
-        </div>
-      </div>
-
       {/* Hero card — centered ring with Gegessen / Übrig / Wasser */}
       <div className="rounded-2xl bg-card p-5">
-        <div className="flex items-center justify-end mb-1">
+        <div className="flex items-center justify-between mb-1">
+          <h1 className="text-lg font-bold">Ernährung</h1>
           <button onClick={() => navigate("/sport/mikro")}
             className="flex items-center gap-1.5 rounded-lg bg-neutral-800 px-2.5 py-1.5 transition-all active:scale-95">
             <Pill className="h-3.5 w-3.5 text-emerald-400" />
             <span className="text-[10px] font-medium text-neutral-400">Mikro</span>
+          </button>
+        </div>
+
+        {/* Date navigation — centered */}
+        <div className="flex items-center justify-center gap-3 mb-3">
+          <button onClick={() => setSelectedDate(shiftDate(selectedDate, -1))}
+            className="rounded-lg p-1.5 transition-all active:scale-90">
+            <ChevronLeft className="h-5 w-5 text-neutral-400" />
+          </button>
+          <button onClick={() => setSelectedDate(todayString())}
+            className="flex items-center gap-1.5">
+            <Calendar className="h-3.5 w-3.5 text-neutral-500" />
+            <span className="text-sm font-medium">{formatDateLabel(selectedDate)}</span>
+          </button>
+          <button onClick={() => setSelectedDate(shiftDate(selectedDate, 1))}
+            className={`rounded-lg p-1.5 transition-all active:scale-90 ${isToday ? "opacity-30 pointer-events-none" : ""}`}>
+            <ChevronRight className="h-5 w-5 text-neutral-400" />
           </button>
         </div>
 
