@@ -129,6 +129,7 @@ export function TrainingLogPage() {
   // ── Active Workout (Hevy-Style) ──
   if (workout.workoutActive) {
     const currentEx = workout.exercises[workout.currentExIdx];
+    const timerShowing = workout.timerActive || workout.restTimer > 0;
     return (
       <div className="flex h-[100dvh] flex-col bg-black overflow-hidden">
         {/* Header */}
@@ -147,133 +148,137 @@ export function TrainingLogPage() {
           </button>
         </div>
 
-        {/* Rest Timer - Compact Display */}
-        <div className="flex shrink-0 flex-col items-center justify-center px-4 py-2">
-          {workout.timerActive || workout.restTimer > 0 ? (
+        {/* Timer / Progress area */}
+        <div className="flex shrink-0 flex-col items-center justify-center px-4 py-3">
+          {timerShowing ? (
             <>
               <p className="text-[4rem] font-bold leading-none tracking-tight tabular-nums">
                 {String(Math.floor(workout.restTimer / 60)).padStart(2, "0")}:{String(workout.restTimer % 60).padStart(2, "0")}
               </p>
-              <p className="mt-1 text-sm text-neutral-500">
+              <p className="mt-1 text-xs text-neutral-500">
                 {String(Math.floor(workout.restDuration / 60)).padStart(2, "0")}:{String(workout.restDuration % 60).padStart(2, "0")}
               </p>
-              <div className="mt-4 flex items-center gap-8">
-                <button onClick={() => workout.adjustTimer(-15)} className="flex flex-col items-center gap-1">
-                  <div className="rounded-lg bg-neutral-800 p-3">
-                    <Minus className="h-4 w-4" />
-                  </div>
-                  <span className="text-xs text-neutral-500">15s</span>
+              <div className="mt-3 flex items-center gap-6">
+                <button onClick={() => workout.adjustTimer(-15)} className="rounded-lg bg-neutral-800 p-2.5">
+                  <Minus className="h-4 w-4" />
                 </button>
                 <button onClick={workout.skipTimer}
-                  className="rounded-lg bg-neutral-800 px-6 py-3 text-sm font-medium">
-                  <SkipForward className="mx-auto h-5 w-5" />
+                  className="rounded-lg bg-neutral-800 px-5 py-2.5 text-sm font-medium">
+                  Skip
                 </button>
-                <button onClick={() => workout.adjustTimer(15)} className="flex flex-col items-center gap-1">
-                  <div className="rounded-lg bg-neutral-800 p-3">
-                    <Plus className="h-4 w-4" />
-                  </div>
-                  <span className="text-xs text-neutral-500">15s</span>
+                <button onClick={() => workout.adjustTimer(15)} className="rounded-lg bg-neutral-800 p-2.5">
+                  <Plus className="h-4 w-4" />
                 </button>
               </div>
             </>
           ) : (
             <div className="text-center">
-              <p className="text-xl font-bold text-neutral-300">{workout.dayLabel}</p>
-              <p className="text-sm text-neutral-600 mt-1">{completedSetsCount} / {totalSetsCount} Sets</p>
-              <div className="mt-3 h-1 w-48 rounded-full bg-neutral-800 overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-white transition-all duration-300"
-                  style={{ width: `${totalSetsCount > 0 ? (completedSetsCount / totalSetsCount) * 100 : 0}%` }}
-                />
+              <p className="text-lg font-bold text-neutral-300">{workout.dayLabel}</p>
+              <p className="text-xs text-neutral-600 mt-0.5">{completedSetsCount} / {totalSetsCount} Sets</p>
+              <div className="mt-2 h-1 w-40 rounded-full bg-neutral-800 overflow-hidden">
+                <div className="h-full rounded-full bg-white transition-all duration-300"
+                  style={{ width: `${totalSetsCount > 0 ? (completedSetsCount / totalSetsCount) * 100 : 0}%` }} />
               </div>
             </div>
           )}
         </div>
 
-        {/* Exercise Card - Bottom Sheet Style */}
+        {/* Pagination dots */}
+        <div className="flex shrink-0 justify-center gap-1.5 pb-3">
+          {workout.exercises.map((_, i) => (
+            <div key={i} className={`h-1.5 rounded-full transition-all ${
+              i === workout.currentExIdx ? "w-4 bg-white" : "w-1.5 bg-neutral-700"
+            }`} />
+          ))}
+        </div>
+
+        {/* Exercise Card */}
         {currentEx && (
-          <div className="min-h-0 flex-1 rounded-t-3xl bg-neutral-900 px-4 pb-16 pt-4 space-y-3 overflow-y-auto">
-            <div className="flex justify-center">
-              <div className="h-1 w-10 rounded-full bg-neutral-700" />
-            </div>
-
-            <div className="flex items-start justify-between">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="h-2 w-2 rounded-full bg-red-500" />
-                  <p className="font-semibold">{currentEx.name}</p>
+          <div className="min-h-0 flex-1 flex flex-col rounded-t-3xl bg-neutral-900 overflow-hidden">
+            {/* Card header */}
+            <div className="shrink-0 px-5 pt-5 pb-3">
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="h-2.5 w-2.5 rounded-full bg-red-500" />
+                    <p className="text-lg font-semibold">{currentEx.name}</p>
+                  </div>
+                  <p className="ml-[18px] text-xs text-neutral-500">{currentEx.muscle_group}</p>
                 </div>
-                <p className="ml-4 text-xs text-neutral-500">{currentEx.muscle_group}</p>
-                {currentEx.previous_log && (
-                  <p className="ml-4 mt-1 text-xs text-neutral-600">
-                    Vorher: {currentEx.previous_log.map((s) => `${s.weight_kg}kg ×${s.reps}`).join(", ")}
-                  </p>
-                )}
+                <button
+                  onClick={() => {
+                    const input = prompt("Pausenzeit (Sekunden):", String(workout.restDuration));
+                    if (input) workout.setRestDuration(Math.max(0, Number(input)));
+                  }}
+                  className="rounded-lg bg-neutral-800 px-2.5 py-1.5 text-[10px] text-neutral-400">
+                  ⏱ {String(Math.floor(workout.restDuration / 60)).padStart(2, "0")}:{String(workout.restDuration % 60).padStart(2, "0")}
+                </button>
               </div>
+              {currentEx.previous_log && (
+                <p className="ml-[18px] mt-1.5 text-[10px] text-neutral-600">
+                  Vorher: {currentEx.previous_log.map((s) => `${s.weight_kg}×${s.reps}`).join(" · ")}
+                </p>
+              )}
             </div>
 
-            <div className="space-y-2">
+            {/* Sets */}
+            <div className="flex-1 overflow-y-auto px-5 space-y-2">
               {currentEx.sets_data.map((set, setIdx) => (
-                <div key={setIdx} className="flex items-center gap-3">
+                <div key={setIdx} className={`flex items-center gap-2 rounded-xl p-2.5 transition-all ${
+                  set.completed ? "bg-neutral-800/60" : "bg-neutral-800"
+                }`}>
+                  <span className="w-5 text-center text-[10px] text-neutral-600">{setIdx + 1}</span>
                   <Input type="number" step="0.5" placeholder="0"
-                    className="w-20 bg-neutral-800 border-none text-center"
+                    className="w-16 bg-neutral-700/50 border-none text-center text-sm font-medium"
                     value={set.weight_kg || ""}
                     onChange={(e) => workout.updateSet(workout.currentExIdx, setIdx, "weight_kg", Number(e.target.value))}
                     disabled={currentEx.saved}
                   />
-                  <span className="text-xs text-neutral-500">Kg</span>
+                  <span className="text-[10px] text-neutral-500">Kg</span>
                   <Input type="number" placeholder="0"
-                    className="w-16 bg-neutral-800 border-none text-center"
+                    className="w-14 bg-neutral-700/50 border-none text-center text-sm font-medium"
                     value={set.reps || ""}
                     onChange={(e) => workout.updateSet(workout.currentExIdx, setIdx, "reps", Number(e.target.value))}
                     disabled={currentEx.saved}
                   />
-                  <span className="text-xs text-neutral-500">reps</span>
-                  <div className="ml-auto flex items-center gap-2">
-                    {!currentEx.saved && currentEx.sets_data.length > 1 && (
-                      <button onClick={() => workout.removeSet(workout.currentExIdx, setIdx)}
-                        className="rounded p-1 text-neutral-600 active:text-red-400">
-                        <X className="h-4 w-4" />
-                      </button>
-                    )}
+                  <span className="text-[10px] text-neutral-500">reps</span>
+                  <div className="ml-auto">
                     <button
                       onClick={() => !currentEx.saved && workout.toggleSetComplete(workout.currentExIdx, setIdx)}
                       disabled={currentEx.saved}
-                      className={`flex h-8 w-8 items-center justify-center rounded-md border-2 transition-all ${
-                        set.completed
-                          ? "border-white bg-white"
-                          : "border-neutral-600 bg-transparent"
+                      className={`flex h-7 w-7 items-center justify-center rounded-lg border-2 transition-all ${
+                        set.completed ? "border-white bg-white" : "border-neutral-600"
                       } ${currentEx.saved ? "opacity-50" : ""}`}
                     >
-                      {set.completed && <Check className="h-4 w-4 text-black" />}
+                      {set.completed && <Check className="h-3.5 w-3.5 text-black" />}
                     </button>
                   </div>
                 </div>
               ))}
             </div>
 
-            <div className="flex items-center gap-3 pt-1">
+            {/* Bottom toolbar */}
+            <div className="shrink-0 flex items-center justify-between px-5 py-4 border-t border-neutral-800">
+              {!currentEx.saved && currentEx.sets_data.length > 1 ? (
+                <button onClick={() => workout.removeSet(workout.currentExIdx, currentEx.sets_data.length - 1)}
+                  className="rounded-xl bg-neutral-800 p-2.5 text-neutral-400 active:scale-95">
+                  <Minus className="h-4 w-4" />
+                </button>
+              ) : <div className="w-9" />}
+
               {!currentEx.saved && (
                 <button onClick={() => workout.addSet(workout.currentExIdx)}
-                  className="flex items-center gap-1 rounded-lg bg-neutral-800 px-3 py-2 text-xs text-neutral-400 active:scale-[0.97]">
-                  <Plus className="h-3 w-3" /> Set
+                  className="flex h-11 w-11 items-center justify-center rounded-full bg-white active:scale-95">
+                  <Plus className="h-5 w-5 text-black" />
                 </button>
               )}
-              <button
-                onClick={() => {
-                  const input = prompt("Pausenzeit (Sekunden):", String(workout.restDuration));
-                  if (input) workout.setRestDuration(Math.max(0, Number(input)));
-                }}
-                className="flex items-center gap-1 rounded-lg bg-neutral-800 px-3 py-2 text-xs text-neutral-400 active:scale-[0.97]"
-              >
-                {String(Math.floor(workout.restDuration / 60)).padStart(2, "0")}:{String(workout.restDuration % 60).padStart(2, "0")}
-              </button>
-              {workout.currentExIdx < workout.exercises.length - 1 && (
+
+              {workout.currentExIdx < workout.exercises.length - 1 ? (
                 <button onClick={workout.goToNextExercise}
-                  className="ml-auto rounded-lg bg-white px-4 py-2 text-xs font-semibold text-black active:scale-[0.97]">
-                  Nächste Übung →
+                  className="rounded-xl bg-neutral-800 px-4 py-2.5 text-xs font-semibold text-white active:scale-95">
+                  Weiter →
                 </button>
-              )}
+              ) : <div className="w-9" />}
             </div>
           </div>
         )}
