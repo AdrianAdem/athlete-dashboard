@@ -147,17 +147,17 @@ export function TrainingLogPage() {
           </button>
         </div>
 
-        {/* Rest Timer - Large Display */}
-        <div className="flex flex-1 flex-col items-center justify-center px-4">
+        {/* Rest Timer - Compact Display */}
+        <div className="flex shrink-0 flex-col items-center justify-center px-4 py-4">
           {workout.timerActive || workout.restTimer > 0 ? (
             <>
-              <p className="text-[5rem] font-bold leading-none tracking-tight tabular-nums">
+              <p className="text-[4rem] font-bold leading-none tracking-tight tabular-nums">
                 {String(Math.floor(workout.restTimer / 60)).padStart(2, "0")}:{String(workout.restTimer % 60).padStart(2, "0")}
               </p>
               <p className="mt-1 text-sm text-neutral-500">
                 {String(Math.floor(workout.restDuration / 60)).padStart(2, "0")}:{String(workout.restDuration % 60).padStart(2, "0")}
               </p>
-              <div className="mt-6 flex items-center gap-8">
+              <div className="mt-4 flex items-center gap-8">
                 <button onClick={() => workout.adjustTimer(-15)} className="flex flex-col items-center gap-1">
                   <div className="rounded-lg bg-neutral-800 p-3">
                     <Minus className="h-4 w-4" />
@@ -192,7 +192,7 @@ export function TrainingLogPage() {
 
         {/* Exercise Card - Bottom Sheet Style */}
         {currentEx && (
-          <div className="rounded-t-3xl bg-neutral-900 px-4 pb-4 pt-4 space-y-3 overflow-y-auto max-h-[55dvh]">
+          <div className="flex-1 rounded-t-3xl bg-neutral-900 px-4 pb-20 pt-4 space-y-3 overflow-y-auto">
             <div className="flex justify-center">
               <div className="h-1 w-10 rounded-full bg-neutral-700" />
             </div>
