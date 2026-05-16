@@ -34,7 +34,7 @@ export function Layout() {
         <Outlet />
       </main>
 
-      <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-border bg-background/95 backdrop-blur pb-[env(safe-area-inset-bottom,8px)]">
+      <nav className="fixed inset-x-0 bottom-0 z-50 bg-background/95 backdrop-blur pb-[env(safe-area-inset-bottom,8px)]">
         <div className="flex h-[4.5rem] items-end justify-around pb-1">
           {tabs.map((tab) => {
             const Icon = tab.icon;
