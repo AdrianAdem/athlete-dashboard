@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Play, ChevronLeft, Plus, Check, Trophy, Flame, X, SkipForward, Minus, Calendar, Trash2 } from "lucide-react";
+import { Play, ChevronLeft, Plus, Check, Trophy, Flame, X, Minus, Calendar, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { USER_ID } from "@/lib/constants";
 import { Input } from "@/components/ui/input";
