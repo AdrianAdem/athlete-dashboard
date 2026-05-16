@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Plus, Search, X, Droplets, Sunrise, Sun, Moon, Apple, Pill, Camera, MessageSquare, Star, Clock } from "lucide-react";
+import { Plus, Search, X, Droplets, Sunrise, Sun, Moon, Apple, Pill, Camera, MessageSquare, Star, Clock, ChevronLeft, ChevronRight, Calendar } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { USER_ID } from "@/lib/constants";
@@ -135,14 +135,32 @@ function AIFreitext({ onResults, onClose }: { onResults: (items: AIFoodItem[]) =
   );
 }
 
+// Date helper — shift by N days from a YYYY-MM-DD string
+function shiftDate(dateStr: string, days: number): string {
+  const d = new Date(dateStr + "T12:00:00");
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function formatDateLabel(dateStr: string): string {
+  const today = todayString();
+  if (dateStr === today) return "Heute";
+  if (dateStr === shiftDate(today, -1)) return "Gestern";
+  if (dateStr === shiftDate(today, 1)) return "Morgen";
+  const d = new Date(dateStr + "T12:00:00");
+  return d.toLocaleDateString("de-DE", { weekday: "short", day: "numeric", month: "short" });
+}
+
 export function NutritionWaterPage() {
   const navigate = useNavigate();
+  const [selectedDate, setSelectedDate] = useState(todayString());
   const [logs, setLogs] = useState<NutritionLog[]>([]);
   const [waterLogs, setWaterLogs] = useState<WaterLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>("frühstück");
   const [showAddForm, setShowAddForm] = useState(false);
   const [addMode, setAddMode] = useState<AddMode>(null);
+  const isToday = selectedDate === todayString();
 
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
@@ -176,10 +194,10 @@ export function NutritionWaterPage() {
   const [bodyWeight, setBodyWeight] = useState(80);
 
   const fetchData = useCallback(async () => {
-    const today = todayString();
+    setLoading(true);
     const [nRes, wRes, profileRes] = await Promise.all([
-      supabase.from("nutrition_log").select("*").eq("user_id", USER_ID).eq("date", today).order("created_at"),
-      supabase.from("water_log").select("*").eq("user_id", USER_ID).eq("date", today).order("logged_at"),
+      supabase.from("nutrition_log").select("*").eq("user_id", USER_ID).eq("date", selectedDate).order("created_at"),
+      supabase.from("water_log").select("*").eq("user_id", USER_ID).eq("date", selectedDate).order("logged_at"),
       supabase.from("user_profiles").select("calorie_goal, water_goal_ml").eq("id", USER_ID).single(),
     ]);
     if (nRes.data) setLogs(nRes.data as NutritionLog[]);
@@ -192,7 +210,7 @@ export function NutritionWaterPage() {
       .order("date", { ascending: false }).limit(1).single();
     if (wt) setBodyWeight(wt.weight_kg);
     setLoading(false);
-  }, []);
+  }, [selectedDate]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -334,7 +352,7 @@ export function NutritionWaterPage() {
     const { data } = await supabase
       .from("nutrition_log")
       .insert({
-        user_id: USER_ID, date: todayString(), meal_type: activeTab as MealType,
+        user_id: USER_ID, date: selectedDate, meal_type: activeTab as MealType,
         food_name: foodName.trim(), barcode,
         calories: liveCal, protein_g: liveProt, carbs_g: liveCarbs, fat_g: liveFat,
         fiber_g: 0, quantity_g: quantity,
@@ -375,7 +393,7 @@ export function NutritionWaterPage() {
   const addWater = async (amount: number) => {
     const { data } = await supabase
       .from("water_log")
-      .insert({ user_id: USER_ID, date: todayString(), amount_ml: amount })
+      .insert({ user_id: USER_ID, date: selectedDate, amount_ml: amount })
       .select().single();
     if (data) setWaterLogs((prev) => [...prev, data as WaterLog]);
   };
@@ -394,64 +412,98 @@ export function NutritionWaterPage() {
 
   if (loading) return <div className="flex min-h-screen items-center justify-center text-neutral-500">Laden...</div>;
 
+  const remaining = goals.calories - totals.calories;
+
   return (
     <div className="space-y-4 p-4 pb-32">
-      <h1 className="text-2xl font-bold">Ernährung</h1>
-
-      {/* Total overview ring */}
-      <div className="rounded-xl bg-card p-4">
-        <div className="flex items-center justify-around">
-          <RingProgress value={totals.calories} max={goals.calories} size={80} color="#f97316">
-            <span className="text-xs font-bold">{totals.calories}</span>
-            <span className="text-[9px] text-neutral-500">/{goals.calories}</span>
-          </RingProgress>
-          <div className="flex flex-col gap-2">
-            <MacroBar label="Protein" current={totals.protein} goal={goals.protein} color="#22c55e" />
-            <MacroBar label="Carbs" current={totals.carbs} goal={goals.carbs} color="#f59e0b" />
-            <MacroBar label="Fett" current={totals.fat} goal={goals.fat} color="#ef4444" />
-          </div>
-          <button onClick={() => navigate("/sport/mikro")}
-            className="flex flex-col items-center gap-1 rounded-xl bg-neutral-800 p-2.5 transition-all active:scale-95">
-            <Pill className="h-4 w-4 text-emerald-400" />
-            <span className="text-[9px] font-medium text-neutral-400">Mikro</span>
+      {/* Date navigation */}
+      <div className="flex items-center justify-between">
+        <h1 className="text-lg font-bold">Ernährung</h1>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setSelectedDate(shiftDate(selectedDate, -1))}
+            className="rounded-lg bg-card p-1.5 transition-all active:scale-90">
+            <ChevronLeft className="h-4 w-4 text-neutral-400" />
+          </button>
+          <button onClick={() => setSelectedDate(todayString())}
+            className="flex items-center gap-1.5 rounded-lg bg-card px-3 py-1.5">
+            <Calendar className="h-3.5 w-3.5 text-neutral-500" />
+            <span className="text-xs font-medium">{formatDateLabel(selectedDate)}</span>
+          </button>
+          <button onClick={() => setSelectedDate(shiftDate(selectedDate, 1))}
+            className={`rounded-lg bg-card p-1.5 transition-all active:scale-90 ${isToday ? "opacity-30 pointer-events-none" : ""}`}>
+            <ChevronRight className="h-4 w-4 text-neutral-400" />
           </button>
         </div>
       </div>
 
-      {/* Meal + Water tabs */}
-      <div className="grid grid-cols-5 gap-2">
+      {/* Hero card — centered ring with Gegessen / Übrig / Wasser */}
+      <div className="rounded-2xl bg-card p-5">
+        <div className="flex items-center justify-end mb-1">
+          <button onClick={() => navigate("/sport/mikro")}
+            className="flex items-center gap-1.5 rounded-lg bg-neutral-800 px-2.5 py-1.5 transition-all active:scale-95">
+            <Pill className="h-3.5 w-3.5 text-emerald-400" />
+            <span className="text-[10px] font-medium text-neutral-400">Mikro</span>
+          </button>
+        </div>
+
+        <div className="flex items-center justify-around py-3">
+          <div className="flex flex-col items-center gap-1">
+            <span className="text-xs text-neutral-500">Gegessen</span>
+            <span className="text-xl font-bold">{totals.calories}</span>
+          </div>
+
+          <RingProgress value={totals.calories} max={goals.calories} size={120} strokeWidth={8}
+            color={remaining >= 0 ? "#22c55e" : "#ef4444"}>
+            <span className="text-[10px] text-neutral-500">Übrig</span>
+            <span className={`text-2xl font-bold ${remaining < 0 ? "text-red-500" : ""}`}>
+              {Math.abs(remaining)}
+            </span>
+            <span className="text-[9px] text-neutral-600">Ziel {goals.calories} kcal</span>
+          </RingProgress>
+
+          <div className="flex flex-col items-center gap-1">
+            <span className="text-xs text-neutral-500">Wasser</span>
+            <span className="text-xl font-bold">{(waterTotalMl / 1000).toFixed(1)}L</span>
+          </div>
+        </div>
+
+        {/* Macro bars — 3 column */}
+        <div className="grid grid-cols-3 gap-3 pt-2">
+          <MacroCard label="Kohlenhydrate" current={totals.carbs} goal={goals.carbs} color="#f59e0b" />
+          <MacroCard label="Protein" current={totals.protein} goal={goals.protein} color="#22c55e" />
+          <MacroCard label="Fett" current={totals.fat} goal={goals.fat} color="#ef4444" />
+        </div>
+      </div>
+
+      {/* Meal + Water tabs — pill style */}
+      <div className="flex gap-1.5 overflow-x-auto pb-1">
         {mealConfig.map((meal) => {
-          const Icon = meal.icon;
           const mealCal = mealTotals(meal.type);
-          const mealGoal = Math.round(goals.calories * meal.pct);
           const isActive = activeTab === meal.type;
           return (
             <button key={meal.type} onClick={() => { setActiveTab(meal.type); setShowAddForm(false); resetForm(); }}
-              className={`flex flex-col items-center gap-1 rounded-xl p-3 transition-all ${
+              className={`flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-medium transition-all ${
                 isActive ? "bg-white text-black" : "bg-card text-neutral-400"
               }`}>
-              <Icon className="h-5 w-5" strokeWidth={1.5} />
-              <span className="text-[10px] font-medium">{meal.label}</span>
-              <span className={`text-[10px] ${mealCal >= mealGoal ? "text-orange-500" : isActive ? "text-neutral-600" : "text-neutral-600"}`}>
-                {mealCal}/{mealGoal}
-              </span>
+              <meal.icon className="h-3.5 w-3.5" strokeWidth={1.5} />
+              {meal.label}
+              {mealCal > 0 && <span className="text-[10px] opacity-60">{mealCal}</span>}
             </button>
           );
         })}
         <button onClick={() => { setActiveTab("water"); setShowAddForm(false); resetForm(); }}
-          className={`flex flex-col items-center gap-1 rounded-xl p-3 transition-all ${
+          className={`flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-medium transition-all ${
             activeTab === "water" ? "bg-blue-500 text-white" : "bg-card text-neutral-400"
           }`}>
-          <Droplets className="h-5 w-5" strokeWidth={1.5} />
-          <span className="text-[10px] font-medium">Wasser</span>
-          <span className="text-[10px]">{waterTotalMl}ml</span>
+          <Droplets className="h-3.5 w-3.5" strokeWidth={1.5} />
+          Wasser
         </button>
       </div>
 
       {activeTab === "water" ? (
-        <div className="space-y-4">
-          <div className="flex flex-col items-center gap-4 rounded-xl bg-card p-6">
-            <RingProgress value={waterTotalMl} max={waterGoalMl} size={120} strokeWidth={8} color="#3b82f6">
+        <div className="space-y-3">
+          <div className="flex flex-col items-center gap-4 rounded-2xl bg-card p-6">
+            <RingProgress value={waterTotalMl} max={waterGoalMl} size={110} strokeWidth={8} color="#3b82f6">
               <Droplets className="h-5 w-5 text-blue-400" />
               <span className="text-lg font-bold">{waterTotalMl}ml</span>
               <span className="text-[10px] text-neutral-500">von {waterGoalMl}ml</span>
@@ -465,7 +517,7 @@ export function NutritionWaterPage() {
               ))}
             </div>
           </div>
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             {waterLogs.map((log) => (
               <div key={log.id} className="flex items-center justify-between rounded-xl bg-card p-3 text-sm">
                 <span>{log.amount_ml} ml</span>
@@ -483,42 +535,31 @@ export function NutritionWaterPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {/* Meal calorie budget */}
-          {(() => {
-            const meal = mealConfig.find((m) => m.type === activeTab)!;
-            const mealCal = mealTotals(meal.type);
-            const mealGoal = Math.round(goals.calories * meal.pct);
-            const remaining = mealGoal - mealCal;
-            const Icon = meal.icon;
-            return (
-              <div className="rounded-xl bg-card p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="flex items-center gap-2 text-sm font-medium">
-                    <Icon className="h-4 w-4" strokeWidth={1.5} /> {meal.label}
-                  </span>
-                  <span className={`text-sm font-bold ${remaining < 0 ? "text-red-500" : "text-green-500"}`}>
-                    {remaining > 0 ? `${remaining} kcal übrig` : `${Math.abs(remaining)} kcal drüber`}
-                  </span>
-                </div>
-                <div className="h-2 rounded-full bg-neutral-800 overflow-hidden">
-                  <div className={`h-full rounded-full transition-all duration-300 ${remaining < 0 ? "bg-red-500" : "bg-green-500"}`}
-                    style={{ width: `${Math.min((mealCal / mealGoal) * 100, 100)}%` }} />
-                </div>
-                <p className="mt-1 text-xs text-neutral-600">{mealCal} / {mealGoal} kcal ({Math.round(meal.pct * 100)}% Tagesziel)</p>
-              </div>
-            );
-          })()}
+          {/* Essensprotokoll header */}
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-neutral-400 uppercase tracking-wider">Essensprotokoll</h2>
+            <span className="text-xs text-neutral-600">
+              {(() => { const m = mealConfig.find((m) => m.type === activeTab)!; const cal = mealTotals(m.type); const goal = Math.round(goals.calories * m.pct); const r = goal - cal; return r > 0 ? `${r} kcal übrig` : `${Math.abs(r)} drüber`; })()}
+            </span>
+          </div>
 
-          {/* Food entries */}
+          {/* Food entries with macro badges */}
           {logs.filter((l) => l.meal_type === activeTab).map((item) => (
-            <div key={item.id} className="flex items-center justify-between rounded-xl bg-card p-3">
-              <div>
-                <p className="text-sm font-medium">{item.food_name}</p>
-                <p className="text-xs text-neutral-500">
-                  {item.quantity_g}g · {item.calories} kcal · P{item.protein_g} · K{item.carbs_g} · F{item.fat_g}
-                </p>
+            <div key={item.id} className="flex items-center gap-3 rounded-2xl bg-card p-3.5">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-neutral-800">
+                <Apple className="h-5 w-5 text-neutral-500" />
               </div>
-              <button onClick={() => deleteEntry(item.id)} className="text-neutral-600 hover:text-red-500">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{item.food_name}</p>
+                <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                  <span className="text-xs text-neutral-500">{item.quantity_g}g</span>
+                  <span className="text-xs font-semibold text-orange-400">{item.calories} kcal</span>
+                  <span className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-400">K {item.carbs_g}g</span>
+                  <span className="rounded-full bg-green-500/15 px-1.5 py-0.5 text-[10px] font-medium text-green-400">P {item.protein_g}g</span>
+                  <span className="rounded-full bg-red-500/15 px-1.5 py-0.5 text-[10px] font-medium text-red-400">F {item.fat_g}g</span>
+                </div>
+              </div>
+              <button onClick={() => deleteEntry(item.id)} className="shrink-0 text-neutral-600 active:text-red-500">
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -714,17 +755,17 @@ export function NutritionWaterPage() {
   );
 }
 
-function MacroBar({ label, current, goal, color }: {
+function MacroCard({ label, current, goal, color }: {
   label: string; current: number; goal: number; color: string;
 }) {
   const pct = Math.min((current / goal) * 100, 100);
   return (
-    <div className="flex items-center gap-2">
-      <span className="w-12 text-[10px] text-neutral-500">{label}</span>
-      <div className="h-2 w-24 overflow-hidden rounded-full bg-neutral-800">
-        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
+    <div className="space-y-1.5">
+      <span className="text-[10px] text-neutral-500">{label}</span>
+      <p className="text-xs font-semibold">{Math.round(current)}<span className="text-neutral-600">/{goal}g</span></p>
+      <div className="h-1.5 overflow-hidden rounded-full bg-neutral-800">
+        <div className="h-full rounded-full transition-all duration-300" style={{ width: `${pct}%`, backgroundColor: color }} />
       </div>
-      <span className="text-[10px] text-neutral-500">{Math.round(current)}/{goal}g</span>
     </div>
   );
 }
