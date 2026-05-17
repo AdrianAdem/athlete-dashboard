@@ -1,7 +1,8 @@
 // Food Lookup Edge Function
-// Layer 1: Barcode → OpenFoodFacts
-// Layer 2: Text search → OpenFoodFacts
-// Layer 3: AI freitext → Claude Haiku
+// Layer 1: Barcode → FatSecret
+// Layer 2: Text search → FatSecret
+// Layer 3: Food details → FatSecret
+// Layer 4: AI freitext → Claude Haiku
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
@@ -11,113 +12,105 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const OFF_BASE = "https://world.openfoodfacts.org";
-const OFF_SEARCH = "https://world.openfoodfacts.net/cgi/search.pl";
+// FatSecret OAuth 2.0 token cache
+let tokenCache: { token: string; expires: number } | null = null;
 
-interface OFFProduct {
-  code?: string;
-  product_name?: string;
-  brands?: string;
-  nutriments?: Record<string, number>;
-  serving_size?: string;
-}
+async function getFatSecretToken(): Promise<string> {
+  if (tokenCache && Date.now() < tokenCache.expires) return tokenCache.token;
 
-function extractNutrients(p: OFFProduct) {
-  const n = p.nutriments ?? {};
-  return {
-    calories: Math.round(n["energy-kcal_100g"] ?? n["energy-kcal"] ?? 0),
-    protein: Math.round((n["proteins_100g"] ?? 0) * 10) / 10,
-    carbs: Math.round((n["carbohydrates_100g"] ?? 0) * 10) / 10,
-    fat: Math.round((n["fat_100g"] ?? 0) * 10) / 10,
-    fiber: Math.round((n["fiber_100g"] ?? 0) * 10) / 10,
-  };
-}
+  const clientId = Deno.env.get("FATSECRET_CLIENT_ID") ?? Deno.env.get("FATSECRET_CONSUMER_KEY") ?? "";
+  const clientSecret = Deno.env.get("FATSECRET_CLIENT_SECRET") ?? Deno.env.get("FATSECRET_CONSUMER_SECRET") ?? "";
 
-// Barcode lookup
-async function handleBarcode(barcode: string) {
-  const res = await fetch(
-    `${OFF_BASE}/api/v2/product/${barcode}?fields=code,product_name,brands,nutriments,serving_size`,
-    { headers: { "User-Agent": "LifeManager/1.0" } }
-  );
-  if (!res.ok) return { found: false };
-  const data = await res.json();
-  if (data.status !== 1 || !data.product) return { found: false };
-  const p = data.product as OFFProduct;
-  const nutrients = extractNutrients(p);
-  return {
-    found: true,
-    food: {
-      id: p.code ?? barcode,
-      name: p.product_name ?? "Unbekannt",
-      brand: p.brands ?? null,
-      servings: [{
-        id: "100g",
-        description: "100g",
-        metricAmount: 100,
-        metricUnit: "g",
-        ...nutrients,
-      }],
+  const res = await fetch("https://oauth.fatsecret.com/connect/token", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Authorization: `Basic ${btoa(`${clientId}:${clientSecret}`)}`,
     },
+    body: "grant_type=client_credentials&scope=basic",
+  });
+
+  if (!res.ok) throw new Error(`FatSecret auth failed: ${res.status}`);
+  const data = await res.json();
+  tokenCache = { token: data.access_token, expires: Date.now() + (data.expires_in - 60) * 1000 };
+  return tokenCache.token;
+}
+
+async function fatSecretAPI(method: string, params: Record<string, string> = {}) {
+  const token = await getFatSecretToken();
+  const searchParams = new URLSearchParams({ method, format: "json", ...params });
+  const res = await fetch(`https://platform.fatsecret.com/rest/server.api?${searchParams}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`FatSecret API error: ${res.status}`);
+  return res.json();
+}
+
+function parseServing(s: any) {
+  return {
+    id: s.serving_id,
+    description: s.serving_description ?? "",
+    metricAmount: parseFloat(s.metric_serving_amount ?? "0"),
+    metricUnit: s.metric_serving_unit ?? "g",
+    calories: parseFloat(s.calories ?? "0"),
+    protein: parseFloat(s.protein ?? "0"),
+    carbs: parseFloat(s.carbohydrate ?? "0"),
+    fat: parseFloat(s.fat ?? "0"),
+    fiber: parseFloat(s.fiber ?? "0"),
   };
+}
+
+// Barcode lookup via FatSecret
+async function handleBarcode(barcode: string) {
+  try {
+    const data = await fatSecretAPI("food.find_id_for_barcode", { barcode });
+    const foodId = data?.food_id?.value;
+    if (!foodId) return { found: false };
+    return await handleFood(foodId);
+  } catch {
+    return { found: false };
+  }
 }
 
 // Text search
 async function handleSearch(query: string, page = 0) {
-  const params = new URLSearchParams({
-    search_terms: query,
-    search_simple: "1",
-    action: "process",
-    json: "1",
-    page_size: "20",
-    page: String(page + 1),
-    fields: "code,product_name,brands,nutriments",
+  const data = await fatSecretAPI("foods.search", {
+    search_expression: query,
+    page_number: String(page),
+    max_results: "20",
   });
-  const res = await fetch(`${OFF_SEARCH}?${params}`, {
-    headers: { "User-Agent": "LifeManager/1.0" },
-  });
-  if (!res.ok) return { results: [], totalResults: 0 };
-  const data = await res.json();
-  const products = (data.products ?? []) as OFFProduct[];
+  const foods = data?.foods?.food;
+  if (!foods) return { results: [], totalResults: 0 };
+  const arr = Array.isArray(foods) ? foods : [foods];
   return {
-    results: products
-      .filter((p) => p.product_name)
-      .map((p) => {
-        const n = extractNutrients(p);
-        return {
-          id: p.code ?? "",
-          name: p.product_name ?? "",
-          brand: p.brands ?? null,
-          description: `${n.calories} kcal · P${n.protein}g · K${n.carbs}g · F${n.fat}g pro 100g`,
-        };
-      }),
-    totalResults: data.count ?? 0,
+    results: arr.map((f: any) => ({
+      id: f.food_id,
+      name: f.food_name,
+      brand: f.brand_name ?? null,
+      description: f.food_description ?? "",
+    })),
+    totalResults: parseInt(data.foods.total_results ?? "0"),
   };
 }
 
 // Get food details
 async function handleFood(foodId: string) {
-  const res = await fetch(
-    `${OFF_BASE}/api/v2/product/${foodId}?fields=code,product_name,brands,nutriments,serving_size`,
-    { headers: { "User-Agent": "LifeManager/1.0" } }
-  );
-  if (!res.ok) return { found: false };
-  const data = await res.json();
-  if (data.status !== 1 || !data.product) return { found: false };
-  const p = data.product as OFFProduct;
-  const nutrients = extractNutrients(p);
+  const data = await fatSecretAPI("food.get.v4", { food_id: foodId });
+  const food = data?.food;
+  if (!food) return { found: false };
+
+  const servingsRaw = food.servings?.serving;
+  const servings = servingsRaw
+    ? (Array.isArray(servingsRaw) ? servingsRaw : [servingsRaw]).map(parseServing)
+    : [];
+
   return {
     found: true,
     food: {
-      id: p.code ?? foodId,
-      name: p.product_name ?? "Unbekannt",
-      brand: p.brands ?? null,
-      servings: [{
-        id: "100g",
-        description: "100g",
-        metricAmount: 100,
-        metricUnit: "g",
-        ...nutrients,
-      }],
+      id: food.food_id,
+      name: food.food_name,
+      brand: food.brand_name ?? null,
+      servings,
     },
   };
 }
@@ -126,6 +119,7 @@ async function handleFood(foodId: string) {
 async function handleAI(text: string) {
   const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not set");
+
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -146,10 +140,12 @@ Food description: "${text}"`,
       }],
     }),
   });
+
   if (!res.ok) {
     const err = await res.text();
     throw new Error(`Claude API error: ${res.status} ${err}`);
   }
+
   const data = await res.json();
   const content = data.content?.[0]?.text ?? "[]";
   const match = content.match(/\[[\s\S]*\]/);
@@ -160,10 +156,12 @@ serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
+
   try {
     const url = new URL(req.url);
     const path = url.pathname.split("/").pop();
     const body = await req.json();
+
     let result;
     switch (path) {
       case "barcode": result = await handleBarcode(body.barcode); break;
@@ -175,6 +173,7 @@ serve(async (req) => {
           status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
     }
+
     return new Response(JSON.stringify(result), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
