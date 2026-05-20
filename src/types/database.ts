@@ -58,6 +58,7 @@ export interface TrainingExercise {
   reps: number;
   day_label: string;
   order_index: number;
+  rest_seconds: number | null;
 }
 
 export interface SetLog {

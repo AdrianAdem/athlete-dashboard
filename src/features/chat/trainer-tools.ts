@@ -10,6 +10,11 @@ Deine Aufgaben:
 - Aktive Änderungen an seinem Trainingsplan wenn er es wünscht
 - Wöchentliche Fortschrittsanalysen
 
+DB-Schema Hinweise:
+- training_exercises hat: name, muscle_group, sets, reps, day_label, order_index, rest_seconds
+- rest_seconds = Pausenzeit zwischen Sätzen in Sekunden (z.B. 90 = 1:30 min)
+- Wenn du Pausen ändern sollst, nutze update_exercise mit { rest_seconds: <wert> }
+
 Kommunikationsstil: Direkt, motivierend, kein Gelaber. Deutsch.
 Sprich Adrian mit Du an. Sei ehrlich wenn Werte schlecht aussehen.`;
 
@@ -70,6 +75,7 @@ export const trainerTools = [
             muscle_group: { type: "string" },
             sets: { type: "number" },
             reps: { type: "number" },
+            rest_seconds: { type: "number", description: "Pausenzeit zwischen Sätzen in Sekunden" },
           },
         },
       },
@@ -91,6 +97,7 @@ export const trainerTools = [
             sets: { type: "number" },
             reps: { type: "number" },
             day_label: { type: "string" },
+            rest_seconds: { type: "number", description: "Pausenzeit zwischen Sätzen in Sekunden" },
           },
           required: ["name", "muscle_group", "sets", "reps", "day_label"],
         },
