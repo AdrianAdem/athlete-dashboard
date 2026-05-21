@@ -2,12 +2,14 @@ import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   Home,
   Dumbbell,
+  Flame,
   Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const tabs = [
   { path: "/sport", label: "Sport", icon: Dumbbell },
+  { path: "/ernaehrung", label: "Ernährung", icon: Flame },
   { path: "/", label: "Home", icon: Home, center: true },
   { path: "/einstellungen", label: "Settings", icon: Settings },
 ] as const;

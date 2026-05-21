@@ -420,7 +420,7 @@ export function NutritionWaterPage() {
       <div className="rounded-2xl bg-card p-5">
         <div className="flex items-center justify-between mb-1">
           <h1 className="text-lg font-bold">Ernährung</h1>
-          <button onClick={() => navigate("/sport/mikro")}
+          <button onClick={() => navigate("/ernaehrung/mikro")}
             className="flex items-center gap-1.5 rounded-lg bg-neutral-800 px-2.5 py-1.5 transition-all active:scale-95">
             <Pill className="h-3.5 w-3.5 text-emerald-400" />
             <span className="text-[10px] font-medium text-neutral-400">Mikro</span>

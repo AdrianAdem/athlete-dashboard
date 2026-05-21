@@ -1,12 +1,11 @@
 import { useNavigate } from "react-router-dom";
-import { CheckSquare, ClipboardList, Dumbbell, BarChart3, Flame, Scale } from "lucide-react";
+import { CheckSquare, ClipboardList, Dumbbell, BarChart3, Scale } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const sections = [
   { path: "/sport/todos", label: "Aufgaben", icon: CheckSquare, color: "text-blue-400" },
   { path: "/sport/plan", label: "Trainingsplan", icon: ClipboardList, color: "text-green-500" },
   { path: "/sport/loggen", label: "Training loggen", icon: Dumbbell, color: "text-orange-500" },
-  { path: "/sport/ernaehrung", label: "Ernährung & Wasser", icon: Flame, color: "text-yellow-500" },
   { path: "/sport/gewicht", label: "Gewicht", icon: Scale, color: "text-purple-400" },
   { path: "/sport/statistiken", label: "Statistiken", icon: BarChart3, color: "text-cyan-400" },
 ] as const;

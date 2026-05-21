@@ -40,9 +40,14 @@ export default function App() {
             <Route path="/sport/todos" element={<SportTodosPage />} />
             <Route path="/sport/plan" element={<TrainingPlanPage />} />
             <Route path="/sport/loggen" element={<TrainingLogPage />} />
-            <Route path="/sport/ernaehrung" element={<NutritionWaterPage />} />
-            <Route path="/sport/mikro" element={<MicronutrientsPage />} />
             <Route path="/sport/gewicht" element={<WeightPage />} />
+
+            {/* Ernährung */}
+            <Route path="/ernaehrung" element={<NutritionWaterPage />} />
+            <Route path="/ernaehrung/mikro" element={<MicronutrientsPage />} />
+            {/* Legacy redirect */}
+            <Route path="/sport/ernaehrung" element={<Navigate to="/ernaehrung" replace />} />
+            <Route path="/sport/mikro" element={<Navigate to="/ernaehrung/mikro" replace />} />
             <Route path="/sport/statistiken" element={<SportStatsPage />} />
             <Route path="/sport/berichte" element={<WeeklyReportPage />} />
 

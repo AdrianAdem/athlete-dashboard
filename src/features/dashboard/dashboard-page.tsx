@@ -111,14 +111,14 @@ export function DashboardPage() {
           label="Kalorien"
           value={`${nutritionTotal.calories}`}
           sub={`/ ${calorieGoal} kcal`}
-          onClick={() => navigate("/sport/ernaehrung")}
+          onClick={() => navigate("/ernaehrung")}
         />
         <StatCard
           icon={<Droplets className="h-5 w-5 text-blue-400" />}
           label="Wasser"
           value={`${(waterTotal / 1000).toFixed(1)}L`}
           sub="/ 3.0L"
-          onClick={() => navigate("/sport/ernaehrung")}
+          onClick={() => navigate("/ernaehrung")}
         />
         <StatCard
           icon={<Dumbbell className="h-5 w-5 text-green-500" />}
@@ -226,7 +226,7 @@ export function DashboardPage() {
         <h2 className="mb-3 text-lg font-bold">Schnellzugriff</h2>
         <div className="grid grid-cols-3 gap-2">
           <QuickAction label="Training starten" icon={<Dumbbell className="h-5 w-5" />} onClick={() => navigate("/sport/loggen")} />
-          <QuickAction label="Essen tracken" icon={<Flame className="h-5 w-5" />} onClick={() => navigate("/sport/ernaehrung")} />
+          <QuickAction label="Essen tracken" icon={<Flame className="h-5 w-5" />} onClick={() => navigate("/ernaehrung")} />
           <QuickAction label="Fortschritt" icon={<TrendingUp className="h-5 w-5" />} onClick={() => navigate("/sport/statistiken")} />
         </div>
       </div>

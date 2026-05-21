@@ -72,7 +72,7 @@ export function MicronutrientsPage() {
   return (
     <div className="space-y-4 p-4 pb-24">
       <div className="flex items-center gap-3">
-        <button onClick={() => navigate("/sport/ernaehrung")}
+        <button onClick={() => navigate("/ernaehrung")}
           className="rounded-full bg-neutral-800 p-2">
           <ChevronLeft className="h-5 w-5" />
         </button>
