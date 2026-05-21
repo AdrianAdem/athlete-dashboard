@@ -7,7 +7,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import { USER_ID } from "@/lib/constants";
 import { todayString, cn, isRoutineActiveToday } from "@/lib/utils";
-import type { DailyTodo, NutritionLog, WaterLog, WeightLog, Routine, RoutineLog } from "@/types/database";
+import type { DailyTodo, NutritionLog, WaterLog, WeightLog, Routine } from "@/types/database";
 
 export function DashboardPage() {
   const navigate = useNavigate();
@@ -16,7 +16,7 @@ export function DashboardPage() {
   const [waterTotal, setWaterTotal] = useState(0);
   const [latestWeight, setLatestWeight] = useState<WeightLog | null>(null);
   const [trainingCount, setTrainingCount] = useState(0);
-  const [routineStats, setRoutineStats] = useState<{ total: number; done: number; items: { name: string; done: boolean; area: string }[] }>({ total: 0, done: 0, items: [] });
+  const [routineStats, setRoutineStats] = useState<{ total: number; done: number; items: { name: string; done: boolean }[] }>({ total: 0, done: 0, items: [] });
   const [calorieGoal, setCalorieGoal] = useState(2500);
   const [loading, setLoading] = useState(true);
 
@@ -51,7 +51,7 @@ export function DashboardPage() {
 
     // Fetch routines
     const { data: routinesData } = await supabase
-      .from("routines").select("id, name, area, weekdays").eq("user_id", USER_ID).eq("is_active", true);
+      .from("routines").select("id, name, area, weekdays, start_date, end_date").eq("user_id", USER_ID).eq("is_active", true);
     if (routinesData) {
       const jsDay = new Date().getDay();
       const weekday = jsDay === 0 ? 6 : jsDay - 1;
@@ -59,15 +59,14 @@ export function DashboardPage() {
         (r) => (!r.weekdays || r.weekdays.length === 0 || r.weekdays.includes(weekday))
           && isRoutineActiveToday(r.start_date, r.end_date)
       );
-      const logsRes = await Promise.all(
-        todayRoutines.map((r) =>
-          supabase.from("routine_logs").select("completed").eq("routine_id", r.id).eq("user_id", USER_ID).eq("date", today).maybeSingle()
-        )
-      );
-      const items = todayRoutines.map((r, i) => ({
+      const routineIds = todayRoutines.map((r) => r.id);
+      const { data: allLogs } = routineIds.length > 0
+        ? await supabase.from("routine_logs").select("routine_id, completed").in("routine_id", routineIds).eq("user_id", USER_ID).eq("date", today)
+        : { data: [] };
+      const logMap = new Map((allLogs ?? []).map((l) => [l.routine_id, l.completed]));
+      const items = todayRoutines.map((r) => ({
         name: r.name,
-        done: !!(logsRes[i].data as RoutineLog | null)?.completed,
-        area: r.area,
+        done: !!logMap.get(r.id),
       }));
       setRoutineStats({
         total: items.length,

@@ -31,7 +31,6 @@ interface RoutineWithItems extends Routine {
   log: RoutineLog | null;
 }
 
-// Unified todo type (sport_todos + daily_todos merged)
 type UnifiedTodo = (SportTodo | DailyTodo) & { source: "sport" | "daily" };
 
 export function SportTodosPage() {
@@ -78,20 +77,31 @@ export function SportTodosPage() {
         (r) => (!r.weekdays || r.weekdays.length === 0 || r.weekdays.includes(weekday))
           && isRoutineActiveToday(r.start_date, r.end_date)
       );
-      const withItems: RoutineWithItems[] = await Promise.all(
-        routinesData.map(async (r) => {
-          const [itemsRes, logRes] = await Promise.all([
-            supabase.from("routine_items").select("*").eq("routine_id", r.id).order("order_index"),
-            supabase.from("routine_logs").select("*").eq("routine_id", r.id).eq("user_id", USER_ID).eq("date", today).single(),
-          ]);
-          return {
-            ...r,
-            items: (itemsRes.data ?? []) as RoutineItem[],
-            log: logRes.data as RoutineLog | null,
-          };
-        })
-      );
-      setRoutines(withItems);
+      const routineIds = routinesData.map((r) => r.id);
+      if (routineIds.length > 0) {
+        const [itemsRes, logsRes] = await Promise.all([
+          supabase.from("routine_items").select("*").in("routine_id", routineIds).order("order_index"),
+          supabase.from("routine_logs").select("*").in("routine_id", routineIds).eq("user_id", USER_ID).eq("date", today),
+        ]);
+        const itemsByRoutine = new Map<string, RoutineItem[]>();
+        for (const item of (itemsRes.data ?? []) as RoutineItem[]) {
+          const list = itemsByRoutine.get(item.routine_id) ?? [];
+          list.push(item);
+          itemsByRoutine.set(item.routine_id, list);
+        }
+        const logByRoutine = new Map<string, RoutineLog>();
+        for (const log of (logsRes.data ?? []) as RoutineLog[]) {
+          logByRoutine.set(log.routine_id, log);
+        }
+        const withItems: RoutineWithItems[] = routinesData.map((r) => ({
+          ...r,
+          items: itemsByRoutine.get(r.id) ?? [],
+          log: logByRoutine.get(r.id) ?? null,
+        }));
+        setRoutines(withItems);
+      } else {
+        setRoutines([]);
+      }
     }
     setLoading(false);
   }, []);

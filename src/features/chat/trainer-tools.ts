@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { todayString } from "@/lib/utils";
 
 export const SYSTEM_PROMPT = `Du bist Adrians persönlicher Fitness- und Lifestyle-Trainer.
 Du hast vollen Zugriff auf seine App-Daten über die bereitgestellten Tools.
@@ -154,7 +155,7 @@ export async function executeToolCall(
   input: Record<string, unknown>,
   userId: string
 ): Promise<unknown> {
-  const today = new Date().toISOString().split("T")[0];
+  const today = todayString();
 
   switch (toolName) {
     case "get_training_plan": {

@@ -26,7 +26,7 @@
   --color-success: oklch(0.72 0.19 145);
   --color-warning: oklch(0.75 0.18 75);
   --color-info: oklch(0.62 0.17 260);
-  --color-highlight: oklch(0.72 0.19 145);
+  --color-highlight: oklch(0.78 0.16 85);
 }
 
 @layer base {
