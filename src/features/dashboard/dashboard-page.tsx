@@ -146,7 +146,7 @@ export function DashboardPage() {
           <div className="space-y-2">
             {routineStats.items.map((r, i) => (
               <button key={i}
-                onClick={() => navigate(r.area === "sport" ? "/sport/todos" : "/alltag/todos")}
+                onClick={() => navigate("/sport/todos")}
                 className={cn(
                   "flex w-full items-center gap-3 rounded-xl bg-card p-3 text-left transition-all active:scale-[0.98]",
                   r.done && "opacity-50"
@@ -157,7 +157,7 @@ export function DashboardPage() {
                   <Circle className="h-5 w-5 shrink-0 text-neutral-600" />
                 )}
                 <span className={cn("text-sm", r.done && "line-through")}>{r.name}</span>
-                <span className="ml-auto text-[10px] text-neutral-600">{r.area === "sport" ? "Sport" : "Alltag"}</span>
+                <span className="ml-auto text-[10px] text-neutral-600">{r.area === "sport" ? "Sport" : "Routine"}</span>
               </button>
             ))}
           </div>
@@ -169,7 +169,7 @@ export function DashboardPage() {
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-lg font-bold">Tages-Todos</h2>
           <button
-            onClick={() => navigate("/alltag/todos")}
+            onClick={() => navigate("/sport/todos")}
             className="flex items-center gap-1 text-xs text-neutral-500 hover:text-white"
           >
             Alle <ChevronRight className="h-3 w-3" />

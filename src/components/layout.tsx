@@ -2,17 +2,13 @@ import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   Home,
   Dumbbell,
-  CalendarCheck,
-  CalendarDays,
   Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const tabs = [
-  { path: "/alltag", label: "Alltag", icon: CalendarCheck },
   { path: "/sport", label: "Sport", icon: Dumbbell },
   { path: "/", label: "Home", icon: Home, center: true },
-  { path: "/kalender", label: "Kalender", icon: CalendarDays },
   { path: "/einstellungen", label: "Settings", icon: Settings },
 ] as const;
 

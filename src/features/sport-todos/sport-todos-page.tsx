@@ -4,7 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { USER_ID } from "@/lib/constants";
 import { todayString, isRoutineActiveToday } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
-import type { SportTodo, Routine, RoutineItem, RoutineLog, TodoPriority, RoutineCategory } from "@/types/database";
+import type { SportTodo, DailyTodo, Routine, RoutineItem, RoutineLog, TodoPriority, RoutineCategory } from "@/types/database";
 
 const categoryColors: Record<RoutineCategory, string> = {
   kraft: "bg-green-500",
@@ -31,8 +31,11 @@ interface RoutineWithItems extends Routine {
   log: RoutineLog | null;
 }
 
+// Unified todo type (sport_todos + daily_todos merged)
+type UnifiedTodo = (SportTodo | DailyTodo) & { source: "sport" | "daily" };
+
 export function SportTodosPage() {
-  const [todos, setTodos] = useState<SportTodo[]>([]);
+  const [todos, setTodos] = useState<UnifiedTodo[]>([]);
   const [routines, setRoutines] = useState<RoutineWithItems[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"routinen" | "todos">("routinen");
@@ -56,12 +59,17 @@ export function SportTodosPage() {
 
   const fetchData = useCallback(async () => {
     const today = todayString();
-    const [todoRes, routineRes] = await Promise.all([
+    const [sportTodoRes, dailyTodoRes, routineRes] = await Promise.all([
       supabase.from("sport_todos").select("*").eq("user_id", USER_ID).eq("due_date", today).order("created_at", { ascending: false }),
-      supabase.from("routines").select("*").eq("user_id", USER_ID).eq("is_active", true).eq("area", "sport").order("created_at"),
+      supabase.from("daily_todos").select("*").eq("user_id", USER_ID).eq("due_date", today).order("created_at", { ascending: false }),
+      supabase.from("routines").select("*").eq("user_id", USER_ID).eq("is_active", true).order("created_at"),
     ]);
 
-    if (todoRes.data) setTodos(todoRes.data as SportTodo[]);
+    const merged: UnifiedTodo[] = [
+      ...((sportTodoRes.data ?? []) as SportTodo[]).map((t) => ({ ...t, source: "sport" as const })),
+      ...((dailyTodoRes.data ?? []) as DailyTodo[]).map((t) => ({ ...t, source: "daily" as const })),
+    ];
+    setTodos(merged);
 
     if (routineRes.data) {
       const jsDay = new Date().getDay();
@@ -162,9 +170,10 @@ export function SportTodosPage() {
 
   // ── Todo handlers ──
 
-  const toggleTodo = async (todo: SportTodo) => {
+  const toggleTodo = async (todo: UnifiedTodo) => {
     setTodos((prev) => prev.map((t) => t.id === todo.id ? { ...t, completed: !t.completed } : t));
-    await supabase.from("sport_todos").update({ completed: !todo.completed }).eq("id", todo.id);
+    const table = todo.source === "sport" ? "sport_todos" : "daily_todos";
+    await supabase.from(table).update({ completed: !todo.completed }).eq("id", todo.id);
   };
 
   const addTodo = async () => {
@@ -174,15 +183,16 @@ export function SportTodosPage() {
       .insert({ user_id: USER_ID, title: newTodoTitle.trim(), due_date: todayString(), priority: newTodoPriority, category: "sonstiges", completed: false })
       .select().single();
     if (data) {
-      setTodos((prev) => [data as SportTodo, ...prev]);
+      setTodos((prev) => [{ ...(data as SportTodo), source: "sport" as const }, ...prev]);
       setNewTodoTitle("");
       setShowAddTodo(false);
     }
   };
 
-  const deleteTodo = async (id: string) => {
-    setTodos((prev) => prev.filter((t) => t.id !== id));
-    await supabase.from("sport_todos").delete().eq("id", id);
+  const deleteTodo = async (todo: UnifiedTodo) => {
+    setTodos((prev) => prev.filter((t) => t.id !== todo.id));
+    const table = todo.source === "sport" ? "sport_todos" : "daily_todos";
+    await supabase.from(table).delete().eq("id", todo.id);
   };
 
   // ── Stats ──
@@ -196,7 +206,7 @@ export function SportTodosPage() {
 
   return (
     <div className="space-y-4 p-4 pb-24">
-      <h1 className="text-2xl font-bold">Sport-Aufgaben</h1>
+      <h1 className="text-2xl font-bold">Aufgaben</h1>
 
       {/* Progress */}
       <div className="rounded-xl bg-card p-4">
@@ -402,7 +412,7 @@ export function SportTodosPage() {
                 <p className={`text-sm font-medium ${todo.completed ? "line-through text-neutral-600" : ""}`}>{todo.title}</p>
                 {todo.description && <p className="text-xs text-neutral-600">{todo.description}</p>}
               </div>
-              <button onClick={() => deleteTodo(todo.id)} className="text-neutral-600 hover:text-red-500">
+              <button onClick={() => deleteTodo(todo)} className="text-neutral-600 hover:text-red-500">
                 <Trash2 className="h-4 w-4" />
               </button>
             </div>

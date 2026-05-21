@@ -3,7 +3,7 @@ import { CheckSquare, ClipboardList, Dumbbell, BarChart3, Flame, Scale } from "l
 import { cn } from "@/lib/utils";
 
 const sections = [
-  { path: "/sport/todos", label: "Sport-Todos", icon: CheckSquare, color: "text-blue-400" },
+  { path: "/sport/todos", label: "Aufgaben", icon: CheckSquare, color: "text-blue-400" },
   { path: "/sport/plan", label: "Trainingsplan", icon: ClipboardList, color: "text-green-500" },
   { path: "/sport/loggen", label: "Training loggen", icon: Dumbbell, color: "text-orange-500" },
   { path: "/sport/ernaehrung", label: "Ernährung & Wasser", icon: Flame, color: "text-yellow-500" },

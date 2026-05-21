@@ -4,9 +4,6 @@ import { Layout } from "@/components/layout";
 import { WorkoutProvider } from "@/lib/workout-context";
 
 const DashboardPage = lazy(() => import("@/features/dashboard/dashboard-page").then((m) => ({ default: m.DashboardPage })));
-const AlltagPage = lazy(() => import("@/features/alltag/alltag-page").then((m) => ({ default: m.AlltagPage })));
-const DailyTodosPage = lazy(() => import("@/features/daily-todos/daily-todos-page").then((m) => ({ default: m.DailyTodosPage })));
-const CalendarPage = lazy(() => import("@/features/calendar/calendar-page").then((m) => ({ default: m.CalendarPage })));
 const WeeklyReportPage = lazy(() => import("@/features/weekly-report/weekly-report-page").then((m) => ({ default: m.WeeklyReportPage })));
 const SettingsPage = lazy(() => import("@/features/settings/settings-page").then((m) => ({ default: m.SettingsPage })));
 const SportPage = lazy(() => import("@/features/sport/sport-page").then((m) => ({ default: m.SportPage })));
@@ -32,12 +29,9 @@ export default function App() {
             {/* Dashboard */}
             <Route path="/" element={<DashboardPage />} />
 
-            {/* Alltag */}
-            <Route path="/alltag" element={<AlltagPage />} />
-            <Route path="/alltag/todos" element={<DailyTodosPage />} />
-            {/* Kalender */}
-            <Route path="/kalender" element={<CalendarPage />} />
-            <Route path="/alltag/berichte" element={<WeeklyReportPage />} />
+            {/* Legacy redirects */}
+            <Route path="/alltag/*" element={<Navigate to="/sport/todos" replace />} />
+            <Route path="/kalender" element={<Navigate to="/" replace />} />
             {/* Settings */}
             <Route path="/einstellungen" element={<SettingsPage />} />
 
@@ -50,6 +44,7 @@ export default function App() {
             <Route path="/sport/mikro" element={<MicronutrientsPage />} />
             <Route path="/sport/gewicht" element={<WeightPage />} />
             <Route path="/sport/statistiken" element={<SportStatsPage />} />
+            <Route path="/sport/berichte" element={<WeeklyReportPage />} />
 
             {/* Fallback */}
             <Route path="*" element={<Navigate to="/" replace />} />

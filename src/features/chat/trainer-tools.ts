@@ -52,13 +52,8 @@ export const trainerTools = [
     },
   },
   {
-    name: "get_daily_todos",
-    description: "Aktuelle Daily Todos abrufen",
-    input_schema: { type: "object" as const, properties: {}, required: [] },
-  },
-  {
-    name: "get_sport_todos",
-    description: "Aktuelle Sport Todos abrufen",
+    name: "get_all_todos",
+    description: "Alle Todos abrufen (Sport + Daily zusammen)",
     input_schema: { type: "object" as const, properties: {}, required: [] },
   },
   {
@@ -232,22 +227,15 @@ export async function executeToolCall(
       return data ?? [];
     }
 
-    case "get_daily_todos": {
-      const { data } = await supabase
-        .from("daily_todos")
-        .select("*")
-        .eq("user_id", userId)
-        .eq("due_date", today);
-      return data ?? [];
-    }
-
-    case "get_sport_todos": {
-      const { data } = await supabase
-        .from("sport_todos")
-        .select("*")
-        .eq("user_id", userId)
-        .eq("due_date", today);
-      return data ?? [];
+    case "get_all_todos": {
+      const [sportRes, dailyRes] = await Promise.all([
+        supabase.from("sport_todos").select("*").eq("user_id", userId).eq("due_date", today),
+        supabase.from("daily_todos").select("*").eq("user_id", userId).eq("due_date", today),
+      ]);
+      return {
+        sport_todos: sportRes.data ?? [],
+        daily_todos: dailyRes.data ?? [],
+      };
     }
 
     case "update_exercise": {
