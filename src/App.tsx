@@ -14,6 +14,7 @@ const NutritionWaterPage = lazy(() => import("@/features/nutrition/nutrition-wat
 const MicronutrientsPage = lazy(() => import("@/features/nutrition/micronutrients-page").then((m) => ({ default: m.MicronutrientsPage })));
 const WeightPage = lazy(() => import("@/features/weight/weight-page").then((m) => ({ default: m.WeightPage })));
 const SportStatsPage = lazy(() => import("@/features/sport-stats/sport-stats-page").then((m) => ({ default: m.SportStatsPage })));
+const AusdauerPage = lazy(() => import("@/features/ausdauer/ausdauer-page").then((m) => ({ default: m.AusdauerPage })));
 
 function Loading() {
   return <div className="flex min-h-screen items-center justify-center text-neutral-500">Laden...</div>;
@@ -48,6 +49,9 @@ export default function App() {
             {/* Legacy redirect */}
             <Route path="/sport/ernaehrung" element={<Navigate to="/ernaehrung" replace />} />
             <Route path="/sport/mikro" element={<Navigate to="/ernaehrung/mikro" replace />} />
+            {/* Ausdauer */}
+            <Route path="/ausdauer" element={<AusdauerPage />} />
+
             <Route path="/sport/statistiken" element={<SportStatsPage />} />
             <Route path="/sport/berichte" element={<WeeklyReportPage />} />
 

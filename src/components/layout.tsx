@@ -3,6 +3,7 @@ import {
   Home,
   Dumbbell,
   Flame,
+  HeartPulse,
   Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -11,6 +12,7 @@ const tabs = [
   { path: "/sport", label: "Sport", icon: Dumbbell },
   { path: "/ernaehrung", label: "Ernährung", icon: Flame },
   { path: "/", label: "Home", icon: Home, center: true },
+  { path: "/ausdauer", label: "Ausdauer", icon: HeartPulse },
   { path: "/einstellungen", label: "Settings", icon: Settings },
 ] as const;
 
