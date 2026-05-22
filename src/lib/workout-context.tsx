@@ -91,10 +91,12 @@ export function WorkoutProvider({ children }: { children: ReactNode }) {
   }, [timerActive]);
 
   const startRestTimer = useCallback(() => {
-    restEndTime.current = Date.now() + restDuration * 1000;
-    setRestTimer(restDuration);
+    const ex = exercises[currentExIdx];
+    const duration = ex?.rest_seconds ?? restDuration;
+    restEndTime.current = Date.now() + duration * 1000;
+    setRestTimer(duration);
     setTimerActive(true);
-  }, [restDuration]);
+  }, [restDuration, exercises, currentExIdx]);
 
   const skipTimer = useCallback(() => {
     clearInterval(timerRef.current);
