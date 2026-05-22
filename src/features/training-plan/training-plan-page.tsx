@@ -10,6 +10,7 @@ interface ExerciseInput {
   muscle_group: string;
   sets: number;
   reps: number;
+  rest_seconds: number | null;
   day_label: string;
 }
 
@@ -23,12 +24,12 @@ export function TrainingPlanPage() {
   const [showNewPlan, setShowNewPlan] = useState(false);
   const [planName, setPlanName] = useState("");
   const [planExercises, setPlanExercises] = useState<ExerciseInput[]>([
-    { name: "", muscle_group: "", sets: 3, reps: 10, day_label: "Tag A" },
+    { name: "", muscle_group: "", sets: 3, reps: 10, rest_seconds: 90, day_label: "Tag A" },
   ]);
 
   // Add exercise to existing plan
   const [showAddExercise, setShowAddExercise] = useState(false);
-  const [newEx, setNewEx] = useState<ExerciseInput>({ name: "", muscle_group: "", sets: 3, reps: 10, day_label: "Tag A" });
+  const [newEx, setNewEx] = useState<ExerciseInput>({ name: "", muscle_group: "", sets: 3, reps: 10, rest_seconds: 90, day_label: "Tag A" });
 
   const fetchPlan = useCallback(async () => {
     const { data: allPlans } = await supabase
@@ -80,6 +81,7 @@ export function TrainingPlanPage() {
           muscle_group: ex.muscle_group.trim(),
           sets: ex.sets,
           reps: ex.reps,
+          rest_seconds: ex.rest_seconds,
           day_label: ex.day_label.trim() || "Tag A",
           order_index: idx,
         }))
@@ -90,7 +92,7 @@ export function TrainingPlanPage() {
       }
       setShowNewPlan(false);
       setPlanName("");
-      setPlanExercises([{ name: "", muscle_group: "", sets: 3, reps: 10, day_label: "Tag A" }]);
+      setPlanExercises([{ name: "", muscle_group: "", sets: 3, reps: 10, rest_seconds: 90, day_label: "Tag A" }]);
       fetchPlan();
     }
   };
@@ -105,13 +107,14 @@ export function TrainingPlanPage() {
         muscle_group: newEx.muscle_group.trim(),
         sets: newEx.sets,
         reps: newEx.reps,
+        rest_seconds: newEx.rest_seconds,
         day_label: newEx.day_label.trim() || "Tag A",
         order_index: exercises.length,
       })
       .select().single();
     if (data) {
       setExercises((prev) => [...prev, data as TrainingExercise]);
-      setNewEx({ name: "", muscle_group: "", sets: 3, reps: 10, day_label: "Tag A" });
+      setNewEx({ name: "", muscle_group: "", sets: 3, reps: 10, rest_seconds: 90, day_label: "Tag A" });
       setShowAddExercise(false);
     }
   };
@@ -251,7 +254,7 @@ export function TrainingPlanPage() {
                   </button>
                 )}
               </div>
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-5 gap-2">
                 <div className="space-y-1">
                   <label className="text-[10px] text-neutral-500">Muskel</label>
                   <Input value={ex.muscle_group} onChange={(e) => {
@@ -271,6 +274,12 @@ export function TrainingPlanPage() {
                   }} className="bg-neutral-800 border-none" />
                 </div>
                 <div className="space-y-1">
+                  <label className="text-[10px] text-neutral-500">Pause</label>
+                  <Input type="number" value={ex.rest_seconds ?? ""} onChange={(e) => {
+                    const u = [...planExercises]; u[idx] = { ...u[idx], rest_seconds: e.target.value ? Number(e.target.value) : null }; setPlanExercises(u);
+                  }} placeholder="90" className="bg-neutral-800 border-none" />
+                </div>
+                <div className="space-y-1">
                   <label className="text-[10px] text-neutral-500">Tag</label>
                   <Input value={ex.day_label} onChange={(e) => {
                     const u = [...planExercises]; u[idx] = { ...u[idx], day_label: e.target.value }; setPlanExercises(u);
@@ -280,7 +289,7 @@ export function TrainingPlanPage() {
             </div>
           ))}
 
-          <button onClick={() => setPlanExercises([...planExercises, { name: "", muscle_group: "", sets: 3, reps: 10, day_label: planExercises[planExercises.length - 1]?.day_label || "Tag A" }])}
+          <button onClick={() => setPlanExercises([...planExercises, { name: "", muscle_group: "", sets: 3, reps: 10, rest_seconds: 90, day_label: planExercises[planExercises.length - 1]?.day_label || "Tag A" }])}
             className="flex items-center gap-1 text-xs text-neutral-400">
             <Plus className="h-3 w-3" /> Übung hinzufügen
           </button>
@@ -346,7 +355,10 @@ export function TrainingPlanPage() {
                   </div>
                   <div className="flex-1">
                     <p className="text-sm font-medium">{ex.name}</p>
-                    <p className="text-xs text-neutral-500">{ex.muscle_group} · {ex.sets}×{ex.reps}</p>
+                    <p className="text-xs text-neutral-500">
+                      {ex.muscle_group} · {ex.sets}×{ex.reps}
+                      {ex.rest_seconds ? ` · ${ex.rest_seconds}s Pause` : ""}
+                    </p>
                   </div>
                   <button onClick={() => deleteExercise(ex.id)} className="text-neutral-600 hover:text-red-500">
                     <Trash2 className="h-4 w-4" />
@@ -365,7 +377,7 @@ export function TrainingPlanPage() {
               </div>
               <Input value={newEx.name} onChange={(e) => setNewEx({ ...newEx, name: e.target.value })}
                 placeholder="Übungsname" className="bg-neutral-800 border-none" />
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-5 gap-2">
                 <div className="space-y-1">
                   <label className="text-[10px] text-neutral-500">Muskel</label>
                   <Input value={newEx.muscle_group} onChange={(e) => setNewEx({ ...newEx, muscle_group: e.target.value })}
@@ -380,6 +392,11 @@ export function TrainingPlanPage() {
                   <label className="text-[10px] text-neutral-500">Wdh.</label>
                   <Input type="number" value={newEx.reps} onChange={(e) => setNewEx({ ...newEx, reps: Number(e.target.value) })}
                     className="bg-neutral-800 border-none" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-neutral-500">Pause</label>
+                  <Input type="number" value={newEx.rest_seconds ?? ""} onChange={(e) => setNewEx({ ...newEx, rest_seconds: e.target.value ? Number(e.target.value) : null })}
+                    placeholder="90" className="bg-neutral-800 border-none" />
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] text-neutral-500">Tag</label>
