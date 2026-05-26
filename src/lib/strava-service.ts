@@ -53,6 +53,24 @@ export async function getCardioActivities(limit = 50) {
   return data ?? [];
 }
 
+export async function getActivityDetail(activityId: string) {
+  const res = await fetch(`${FUNCTIONS_URL}/strava-sync/activity`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_id: USER_ID, activity_id: activityId }),
+  });
+  return res.json() as Promise<Record<string, unknown>>;
+}
+
+export async function getActivityStreams(activityId: string, keys?: string) {
+  const res = await fetch(`${FUNCTIONS_URL}/strava-sync/streams`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_id: USER_ID, activity_id: activityId, keys }),
+  });
+  return res.json() as Promise<Record<string, unknown[]>>;
+}
+
 export async function getCardioActivitiesForDateRange(startDate: string, endDate: string) {
   const { data } = await supabase
     .from("cardio_activities")

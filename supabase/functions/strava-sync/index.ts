@@ -186,6 +186,45 @@ async function handleActivityDetail(body: { user_id: string; activity_id: string
   });
 }
 
+// POST /strava-sync/streams — fetch activity streams (HR, GPS, altitude, pace, cadence)
+async function handleStreams(body: { user_id: string; activity_id: string; keys?: string }): Promise<Response> {
+  const { token, error: tokenError } = await getValidToken(body.user_id);
+  if (tokenError) {
+    return new Response(JSON.stringify({ error: tokenError }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  const keys = body.keys ?? "heartrate,latlng,altitude,velocity_smooth,cadence,time,distance";
+  const res = await fetch(
+    `https://www.strava.com/api/v3/activities/${body.activity_id}/streams?keys=${keys}&key_type=distance`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+
+  if (!res.ok) {
+    const err = await res.text();
+    return new Response(JSON.stringify({ error: `Strava Streams API: ${res.status}`, details: err }), {
+      status: res.status,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  const streams = await res.json();
+
+  // Convert array of stream objects to a keyed map for easier frontend use
+  const streamMap: Record<string, unknown[]> = {};
+  if (Array.isArray(streams)) {
+    for (const s of streams) {
+      streamMap[s.type] = s.data;
+    }
+  }
+
+  return new Response(JSON.stringify(streamMap), {
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -201,6 +240,8 @@ serve(async (req) => {
         return await handleSync(body);
       case "activity":
         return await handleActivityDetail(body);
+      case "streams":
+        return await handleStreams(body);
       default:
         return new Response(JSON.stringify({ error: "Unknown endpoint" }), {
           status: 404,

@@ -1,9 +1,52 @@
 import { useState, useEffect, useCallback } from "react";
-import { RefreshCw, Activity, Heart, Clock, MapPin, Flame, ChevronRight } from "lucide-react";
+import { RefreshCw, Activity, Heart, Clock, MapPin, Flame, ChevronRight, Link2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { getCardioActivities, syncStravaActivities, getStravaStatus } from "@/lib/strava-service";
 import type { CardioActivity } from "@/types/database";
 import { cn } from "@/lib/utils";
+
+// Decode Google encoded polyline to [lat, lng][]
+function decodePolyline(encoded: string): [number, number][] {
+  const points: [number, number][] = [];
+  let idx = 0, lat = 0, lng = 0;
+  while (idx < encoded.length) {
+    let b, shift = 0, result = 0;
+    do { b = encoded.charCodeAt(idx++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+    lat += (result & 1) ? ~(result >> 1) : (result >> 1);
+    shift = 0; result = 0;
+    do { b = encoded.charCodeAt(idx++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+    lng += (result & 1) ? ~(result >> 1) : (result >> 1);
+    points.push([lat / 1e5, lng / 1e5]);
+  }
+  return points;
+}
+
+function PolylineThumbnail({ polyline }: { polyline: string }) {
+  const coords = decodePolyline(polyline);
+  if (coords.length < 2) return <span className="flex h-10 w-10 items-center justify-center text-lg">{"\u{1F3C3}"}</span>;
+
+  const lats = coords.map((c) => c[0]);
+  const lngs = coords.map((c) => c[1]);
+  const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+  const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
+  const rangeLat = maxLat - minLat || 0.001;
+  const rangeLng = maxLng - minLng || 0.001;
+
+  const size = 40;
+  const pad = 3;
+  const inner = size - pad * 2;
+  const points = coords.map((c) => {
+    const x = pad + ((c[1] - minLng) / rangeLng) * inner;
+    const y = pad + (1 - (c[0] - minLat) / rangeLat) * inner;
+    return `${x},${y}`;
+  }).join(" ");
+
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="rounded-lg bg-neutral-800/60">
+      <polyline points={points} fill="none" stroke="oklch(0.75 0.18 30)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
 
 const activityIcons: Record<string, string> = {
   run: "\u{1F3C3}", ride: "\u{1F6B4}", swim: "\u{1F3CA}", walk: "\u{1F6B6}",
@@ -119,14 +162,6 @@ export function AusdauerPage() {
               {syncing ? "Sync..." : "Sync"}
             </button>
           )}
-          {!stravaConnected && (
-            <button
-              onClick={() => navigate("/einstellungen")}
-              className="flex items-center gap-1.5 rounded-lg bg-[#FC4C02] px-3 py-2 text-xs font-semibold text-white active:scale-[0.97]"
-            >
-              Strava verbinden
-            </button>
-          )}
         </div>
       </div>
 
@@ -170,26 +205,59 @@ export function AusdauerPage() {
         </div>
       )}
 
-      {/* Activity list */}
-      {activities.length === 0 ? (
+      {/* Empty state: not connected */}
+      {!stravaConnected && activities.length === 0 && (
+        <div className="flex flex-col items-center gap-6 py-20 text-center">
+          <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-[#FC4C02]/15">
+            <span className="text-4xl font-black text-[#FC4C02]">S</span>
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-xl font-bold">Mit Strava verbinden</h2>
+            <p className="text-sm text-neutral-500 max-w-[260px]">
+              Verbinde dein Strava-Konto um Lauf-, Rad- und Schwimmaktivitäten automatisch zu synchronisieren.
+            </p>
+          </div>
+          <button
+            onClick={() => navigate("/einstellungen")}
+            className="flex items-center gap-2 rounded-xl bg-[#FC4C02] px-6 py-3 text-sm font-bold text-white active:scale-[0.97] transition-transform"
+          >
+            <Link2 className="h-4 w-4" />
+            Verbinden
+          </button>
+        </div>
+      )}
+
+      {/* Empty state: connected but no activities */}
+      {stravaConnected && activities.length === 0 && (
         <div className="flex flex-col items-center gap-4 rounded-xl bg-card py-12 text-center">
           <Activity className="h-12 w-12 text-neutral-600" />
           <div>
             <p className="text-sm text-neutral-400">Keine Aktivitäten</p>
-            <p className="text-xs text-neutral-600 mt-1">
-              {stravaConnected ? "Tippe auf Sync um Strava-Aktivitäten zu laden" : "Verbinde Strava in den Einstellungen"}
-            </p>
+            <p className="text-xs text-neutral-600 mt-1">Tippe auf Sync um Strava-Aktivitäten zu laden</p>
           </div>
         </div>
-      ) : (
+      )}
+
+      {/* Activity list */}
+      {activities.length > 0 && (
         <div className="space-y-4">
           {grouped.map((group) => (
             <div key={group.label}>
               <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500 mb-2">{group.label}</p>
               <div className="space-y-2">
                 {group.items.map((a) => (
-                  <div key={a.id} className="flex items-center gap-3 rounded-xl bg-card p-3">
-                    <span className="text-lg">{activityIcons[a.activity_type] ?? "\u{1F3C3}"}</span>
+                  <div
+                    key={a.id}
+                    onClick={() => navigate(`/ausdauer/${a.id}`)}
+                    className="flex items-center gap-3 rounded-xl bg-card p-3 cursor-pointer active:scale-[0.98] transition-transform"
+                  >
+                    <div className="shrink-0">
+                      {(a.raw_data?.map as { summary_polyline?: string })?.summary_polyline ? (
+                        <PolylineThumbnail polyline={(a.raw_data!.map as { summary_polyline: string }).summary_polyline} />
+                      ) : (
+                        <span className="flex h-10 w-10 items-center justify-center text-lg">{activityIcons[a.activity_type] ?? "\u{1F3C3}"}</span>
+                      )}
+                    </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate">{a.name ?? activityLabels[a.activity_type] ?? a.activity_type}</p>
                       <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-neutral-500">
@@ -205,13 +273,16 @@ export function AusdauerPage() {
                         {a.avg_pace_sec_per_km != null && a.activity_type === "run" && (
                           <span>{formatPace(a.avg_pace_sec_per_km)}</span>
                         )}
+                        {a.elevation_gain_m != null && a.elevation_gain_m > 0 && (
+                          <span className="text-amber-500">{Math.round(a.elevation_gain_m)}m ↑</span>
+                        )}
                       </div>
                     </div>
                     <div className="flex flex-col items-end gap-1">
-                      <span className="text-[10px] text-neutral-600 capitalize">{a.source}</span>
                       {a.calories != null && a.calories > 0 && (
                         <span className="text-[10px] text-neutral-600">{a.calories} kcal</span>
                       )}
+                      <ChevronRight className="h-3 w-3 text-neutral-700" />
                     </div>
                   </div>
                 ))}
