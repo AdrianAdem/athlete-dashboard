@@ -43,7 +43,9 @@ async function fatSecretAPI(method: string, params: Record<string, string> = {})
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) throw new Error(`FatSecret API error: ${res.status}`);
-  return res.json();
+  const data = await res.json();
+  if (data?.error) throw new Error(`FatSecret: ${data.error.message ?? JSON.stringify(data.error)}`);
+  return data;
 }
 
 function parseServing(s: any) {

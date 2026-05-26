@@ -1,14 +1,24 @@
 import { useState, useEffect } from "react";
-import { Save, Download, Check, AlertCircle } from "lucide-react";
+import { Save, Download, Check, AlertCircle, Link2, Unlink, RefreshCw } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { USER_ID } from "@/lib/constants";
 import { Input } from "@/components/ui/input";
+import { getStravaStatus, getStravaAuthUrl, disconnectStrava, syncStravaActivities } from "@/lib/strava-service";
+import { cn } from "@/lib/utils";
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
 
 export function SettingsPage() {
+  const [searchParams] = useSearchParams();
   const [status, setStatus] = useState<SaveStatus>("idle");
   const [errorMsg, setErrorMsg] = useState("");
+
+  // Strava connection state
+  const [stravaStatus, setStravaStatus] = useState<{ connected: boolean; athlete_name: string | null; last_updated: string | null }>({ connected: false, athlete_name: null, last_updated: null });
+  const [stravaLoading, setStravaLoading] = useState(false);
+  const [stravaSyncing, setStravaSyncing] = useState(false);
+  const [stravaMsg, setStravaMsg] = useState<string | null>(null);
 
   const [name, setName] = useState("");
   const [heightCm, setHeightCm] = useState(0);
@@ -43,6 +53,39 @@ export function SettingsPage() {
     };
     loadProfile();
   }, []);
+
+  // Strava status + callback handling
+  useEffect(() => {
+    getStravaStatus().then(setStravaStatus);
+    const stravaParam = searchParams.get("strava");
+    if (stravaParam === "connected") setStravaMsg("Strava erfolgreich verbunden!");
+    else if (stravaParam === "error") setStravaMsg("Strava-Verbindung fehlgeschlagen");
+  }, [searchParams]);
+
+  const connectStrava = async () => {
+    setStravaLoading(true);
+    const url = await getStravaAuthUrl();
+    window.location.href = url;
+  };
+
+  const handleDisconnectStrava = async () => {
+    setStravaLoading(true);
+    await disconnectStrava();
+    setStravaStatus({ connected: false, athlete_name: null, last_updated: null });
+    setStravaLoading(false);
+  };
+
+  const handleSyncStrava = async () => {
+    setStravaSyncing(true);
+    try {
+      const result = await syncStravaActivities();
+      setStravaMsg(`${result.imported} Aktivitäten synchronisiert`);
+    } catch {
+      setStravaMsg("Sync fehlgeschlagen");
+    }
+    setStravaSyncing(false);
+    setTimeout(() => setStravaMsg(null), 3000);
+  };
 
   const saveProfile = async () => {
     setStatus("saving");
@@ -171,6 +214,60 @@ export function SettingsPage() {
       {status === "error" && errorMsg && (
         <p className="text-xs text-red-400 text-center">{errorMsg}</p>
       )}
+
+      {/* Connections */}
+      <div className="rounded-xl bg-card p-4 space-y-4">
+        <p className="text-sm font-medium text-neutral-400">Verbindungen</p>
+
+        {stravaMsg && (
+          <p className={cn("text-xs text-center py-1 rounded-lg", stravaMsg.includes("fehlgeschlagen") ? "text-red-400 bg-red-500/10" : "text-green-400 bg-green-500/10")}>
+            {stravaMsg}
+          </p>
+        )}
+
+        {/* Strava */}
+        <div className="flex items-center gap-3 rounded-lg bg-neutral-800/50 p-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#FC4C02]/20">
+            <span className="text-lg font-bold text-[#FC4C02]">S</span>
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-semibold">Strava</p>
+            {stravaStatus.connected ? (
+              <p className="text-xs text-neutral-500">Verbunden als {stravaStatus.athlete_name}</p>
+            ) : (
+              <p className="text-xs text-neutral-500">Nicht verbunden</p>
+            )}
+          </div>
+          {stravaStatus.connected ? (
+            <div className="flex gap-1.5">
+              <button onClick={handleSyncStrava} disabled={stravaSyncing}
+                className="rounded-lg bg-neutral-700 p-2 active:scale-[0.95]">
+                <RefreshCw className={cn("h-3.5 w-3.5 text-neutral-300", stravaSyncing && "animate-spin")} />
+              </button>
+              <button onClick={handleDisconnectStrava} disabled={stravaLoading}
+                className="rounded-lg bg-neutral-700 p-2 active:scale-[0.95]">
+                <Unlink className="h-3.5 w-3.5 text-neutral-300" />
+              </button>
+            </div>
+          ) : (
+            <button onClick={connectStrava} disabled={stravaLoading}
+              className="flex items-center gap-1.5 rounded-lg bg-[#FC4C02] px-3 py-1.5 text-xs font-semibold text-white active:scale-[0.95]">
+              <Link2 className="h-3 w-3" /> Verbinden
+            </button>
+          )}
+        </div>
+
+        {/* Garmin placeholder */}
+        <div className="flex items-center gap-3 rounded-lg bg-neutral-800/50 p-3 opacity-50">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-500/20">
+            <span className="text-lg font-bold text-blue-400">G</span>
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-semibold">Garmin Connect</p>
+            <p className="text-xs text-neutral-500">Kommt bald (FIT/TCX Import)</p>
+          </div>
+        </div>
+      </div>
 
       {/* Export */}
       <button

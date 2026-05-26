@@ -191,6 +191,39 @@ export interface MicronutrientLog {
   created_at: string;
 }
 
+export interface CardioActivity {
+  id: string;
+  user_id: string;
+  source: "strava" | "garmin" | "manual";
+  external_id: string | null;
+  activity_type: string;
+  name: string | null;
+  start_date: string;
+  elapsed_time_sec: number | null;
+  moving_time_sec: number | null;
+  distance_m: number | null;
+  elevation_gain_m: number | null;
+  avg_heartrate: number | null;
+  max_heartrate: number | null;
+  avg_speed_ms: number | null;
+  avg_pace_sec_per_km: number | null;
+  calories: number | null;
+  raw_data: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface StravaToken {
+  id: string;
+  user_id: string;
+  athlete_id: number;
+  athlete_name: string | null;
+  access_token: string;
+  refresh_token: string;
+  expires_at: number;
+  scope: string | null;
+  updated_at: string;
+}
+
 export interface ChatMessage {
   id: string;
   user_id: string;
