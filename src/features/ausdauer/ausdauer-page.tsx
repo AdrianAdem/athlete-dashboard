@@ -108,11 +108,13 @@ function LazyRouteMap({ polyline, onClick }: { polyline: string; onClick: () => 
   }, [polyline]);
 
   return (
-    <div
-      ref={containerRef}
-      onClick={onClick}
-      className="h-[200px] w-full cursor-pointer bg-neutral-900"
-    />
+    <div className="relative h-[200px] w-full overflow-hidden">
+      <div
+        ref={containerRef}
+        onClick={onClick}
+        className="absolute inset-0 cursor-pointer bg-neutral-900"
+      />
+    </div>
   );
 }
 
