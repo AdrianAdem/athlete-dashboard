@@ -183,7 +183,7 @@ function ActivityCard({ activity, badge, onClick }: { activity: CardioActivity; 
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold truncate">{activity.name ?? label}</p>
           <p className="text-[11px] text-neutral-500">
-            {dateStr.toLocaleDateString("de-DE", { weekday: "short", day: "numeric", month: "short" })}
+            {dateStr.toLocaleDateString("de-DE", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}
             {" · "}
             {dateStr.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })} Uhr
           </p>
@@ -241,7 +241,7 @@ function CompactCard({ activity, badge, onClick }: { activity: CardioActivity; b
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium truncate">{activity.name ?? label}</p>
         <div className="flex items-center gap-2 text-[11px] text-neutral-500">
-          <span>{dateStr.toLocaleDateString("de-DE", { weekday: "short", day: "numeric", month: "short" })}</span>
+          <span>{dateStr.toLocaleDateString("de-DE", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}</span>
           {activity.distance_m != null && activity.distance_m > 0 && <span className="font-medium text-neutral-300">{formatDistance(activity.distance_m)}</span>}
           {activity.moving_time_sec != null && <span>{formatDuration(activity.moving_time_sec)}</span>}
         </div>
