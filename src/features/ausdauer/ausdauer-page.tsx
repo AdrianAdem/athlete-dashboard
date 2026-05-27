@@ -214,7 +214,7 @@ function LazyRouteMap({ polyline, accentColor, onClick }: { polyline: string; ac
   }, [polyline, accentColor]);
 
   return (
-    <div className="relative h-[200px] w-full overflow-hidden">
+    <div className="relative z-0 isolate h-[200px] w-full overflow-hidden">
       <div
         ref={containerRef}
         onClick={onClick}
