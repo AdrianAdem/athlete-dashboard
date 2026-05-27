@@ -55,6 +55,14 @@
   }
 }
 
+/* Contain Leaflet z-indexes within their card */
+.leaflet-pane,
+.leaflet-top,
+.leaflet-bottom,
+.leaflet-control {
+  z-index: auto !important;
+}
+
 @keyframes fab-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(252, 76, 2, 0.4); }
   50% { box-shadow: 0 0 0 10px rgba(252, 76, 2, 0); }
