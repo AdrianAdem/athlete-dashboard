@@ -5,7 +5,7 @@ import { supabase } from "@/lib/supabase";
 import { USER_ID } from "@/lib/constants";
 import { Input } from "@/components/ui/input";
 import { getStravaStatus, getStravaAuthUrl, disconnectStrava, syncStravaActivities } from "@/lib/strava-service";
-import { getGarminStatus, loginGarmin, syncGarminHealth, bulkSyncGarmin } from "@/lib/garmin-service";
+import { getGarminStatus, openGarminLogin, syncGarminHealth, bulkSyncGarmin } from "@/lib/garmin-service";
 import { cn } from "@/lib/utils";
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
@@ -26,9 +26,6 @@ export function SettingsPage() {
   const [garminLoading, setGarminLoading] = useState(false);
   const [garminSyncing, setGarminSyncing] = useState(false);
   const [garminMsg, setGarminMsg] = useState<string | null>(null);
-  const [showGarminLogin, setShowGarminLogin] = useState(false);
-  const [garminEmail, setGarminEmail] = useState("");
-  const [garminPassword, setGarminPassword] = useState("");
 
   const [name, setName] = useState("");
   const [heightCm, setHeightCm] = useState(0);
@@ -99,15 +96,11 @@ export function SettingsPage() {
   };
 
   const handleGarminLogin = async () => {
-    if (!garminEmail || !garminPassword) return;
     setGarminLoading(true);
     setGarminMsg(null);
     try {
-      await loginGarmin(garminEmail, garminPassword);
+      await openGarminLogin();
       setGarminConnected(true);
-      setShowGarminLogin(false);
-      setGarminEmail("");
-      setGarminPassword("");
       setGarminMsg("Garmin erfolgreich verbunden!");
       // Initial bulk sync of last 7 days
       setGarminSyncing(true);
@@ -333,40 +326,12 @@ export function SettingsPage() {
                 <RefreshCw className={cn("h-3.5 w-3.5 text-neutral-300", garminSyncing && "animate-spin")} />
               </button>
             ) : (
-              <button onClick={() => setShowGarminLogin(!showGarminLogin)}
-                className="flex items-center gap-1.5 rounded-lg bg-blue-500 px-3 py-1.5 text-xs font-semibold text-white active:scale-[0.95]">
-                <Link2 className="h-3 w-3" /> Verbinden
+              <button onClick={handleGarminLogin} disabled={garminLoading}
+                className="flex items-center gap-1.5 rounded-lg bg-blue-500 px-3 py-1.5 text-xs font-semibold text-white active:scale-[0.95] disabled:opacity-50">
+                <Link2 className="h-3 w-3" /> {garminLoading ? "..." : "Verbinden"}
               </button>
             )}
           </div>
-
-          {showGarminLogin && !garminConnected && (
-            <div className="border-t border-neutral-700 p-3 space-y-2">
-              <p className="text-[10px] text-neutral-500">Garmin Connect Zugangsdaten (werden nicht gespeichert, nur für Token-Austausch)</p>
-              <Input
-                type="email"
-                placeholder="E-Mail"
-                value={garminEmail}
-                onChange={(e) => setGarminEmail(e.target.value)}
-                className="bg-neutral-800 border-none text-sm"
-              />
-              <Input
-                type="password"
-                placeholder="Passwort"
-                value={garminPassword}
-                onChange={(e) => setGarminPassword(e.target.value)}
-                className="bg-neutral-800 border-none text-sm"
-                onKeyDown={(e) => e.key === "Enter" && handleGarminLogin()}
-              />
-              <button
-                onClick={handleGarminLogin}
-                disabled={garminLoading || !garminEmail || !garminPassword}
-                className="w-full rounded-lg bg-blue-500 py-2 text-xs font-bold text-white disabled:opacity-50 active:scale-[0.97]"
-              >
-                {garminLoading ? "Verbinden..." : "Einloggen"}
-              </button>
-            </div>
-          )}
         </div>
       </div>
 

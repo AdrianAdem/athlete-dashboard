@@ -13,19 +13,9 @@ const corsHeaders = {
 };
 
 const GARMIN_DOMAIN = "garmin.com";
-const SSO_URL = `https://sso.${GARMIN_DOMAIN}/mobile/api/login`;
 const DI_AUTH_URL = `https://diauth.${GARMIN_DOMAIN}/di-oauth2-service/oauth/token`;
 const CONNECT_BASE = `https://connect.${GARMIN_DOMAIN}`;
-// DI OAuth2 client ID (public, from Garmin Connect Mobile)
 const DI_CLIENT_ID = "GCM_ANDROID";
-
-const MOBILE_HEADERS = {
-  "User-Agent":
-    "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
-  Accept: "application/json, text/plain, */*",
-  "Content-Type": "application/json",
-  Origin: `https://sso.${GARMIN_DOMAIN}`,
-};
 
 const supabaseAdmin = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -102,42 +92,11 @@ async function getValidToken(): Promise<string> {
   return stored.access_token;
 }
 
-// ── SSO Login ───────────────────────────────────────────────────
+// ── Ticket Exchange (browser does SSO login, sends ticket here) ──
 
-async function handleLogin(email: string, password: string) {
-  // Step 1: SSO mobile login
-  const ssoParams = new URLSearchParams({
-    clientId: "GarminConnect",
-    locale: "en",
-    service: `${CONNECT_BASE}/modern`,
-  });
+async function handleExchangeTicket(ticket: string) {
+  if (!ticket) throw new Error("No service ticket provided");
 
-  const ssoRes = await fetch(`${SSO_URL}?${ssoParams}`, {
-    method: "POST",
-    headers: MOBILE_HEADERS,
-    body: JSON.stringify({
-      username: email,
-      password: password,
-      rememberMe: true,
-      captchaToken: "",
-    }),
-  });
-
-  if (!ssoRes.ok) {
-    const err = await ssoRes.text();
-    throw new Error(`SSO login failed: ${ssoRes.status} ${err}`);
-  }
-
-  const ssoData = await ssoRes.json();
-
-  if (ssoData.responseStatus?.type !== "SUCCESSFUL") {
-    throw new Error(`SSO login rejected: ${JSON.stringify(ssoData.responseStatus)}`);
-  }
-
-  const ticket = ssoData.serviceTicketId;
-  if (!ticket) throw new Error("No service ticket in SSO response");
-
-  // Step 2: Exchange ticket for DI OAuth2 tokens
   const diRes = await fetch(DI_AUTH_URL, {
     method: "POST",
     headers: {
@@ -367,8 +326,8 @@ serve(async (req) => {
 
     let result;
     switch (path) {
-      case "login":
-        result = await handleLogin(body.email, body.password);
+      case "exchange-ticket":
+        result = await handleExchangeTicket(body.ticket);
         break;
       case "sync":
         result = await handleSync(body.date);
