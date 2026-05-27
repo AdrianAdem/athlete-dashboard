@@ -5,6 +5,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { saveManualActivity } from "@/lib/strava-service";
 import { cn } from "@/lib/utils";
+import { CARTO_DARK_TILES } from "./ausdauer-utils";
 
 interface GpsPoint {
   lat: number;
@@ -115,9 +116,7 @@ export function LiveTrainingPage() {
       attributionControl: false,
     }).setView([50.1109, 8.6821], 15); // Frankfurt default
 
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-      maxZoom: 19,
-    }).addTo(map);
+    L.tileLayer(CARTO_DARK_TILES, { maxZoom: 19 }).addTo(map);
 
     const line = L.polyline([], {
       color: "oklch(0.75 0.18 30)",

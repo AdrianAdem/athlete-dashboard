@@ -10,24 +10,8 @@ import { getActivityDetail, getActivityStreams } from "@/lib/strava-service";
 import { supabase } from "@/lib/supabase";
 import { USER_ID } from "@/lib/constants";
 import type { CardioActivity } from "@/types/database";
+import { decodePolyline, formatDuration, formatPace, formatDistance, CARTO_DARK_TILES } from "./ausdauer-utils";
 
-// Decode Google encoded polyline to [lat, lng][]
-function decodePolyline(encoded: string): [number, number][] {
-  const points: [number, number][] = [];
-  let idx = 0, lat = 0, lng = 0;
-  while (idx < encoded.length) {
-    let b, shift = 0, result = 0;
-    do { b = encoded.charCodeAt(idx++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
-    lat += (result & 1) ? ~(result >> 1) : (result >> 1);
-    shift = 0; result = 0;
-    do { b = encoded.charCodeAt(idx++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
-    lng += (result & 1) ? ~(result >> 1) : (result >> 1);
-    points.push([lat / 1e5, lng / 1e5]);
-  }
-  return points;
-}
-
-// HR zone boundaries (generic, % of max ~200)
 const HR_ZONES = [
   { name: "Z1 Erholung", min: 0, max: 120, color: "oklch(0.75 0.12 145)" },
   { name: "Z2 Aerob", min: 120, max: 140, color: "oklch(0.72 0.15 170)" },
@@ -36,24 +20,7 @@ const HR_ZONES = [
   { name: "Z5 Maximal", min: 175, max: 999, color: "oklch(0.55 0.22 15)" },
 ];
 
-function formatDuration(sec: number): string {
-  const h = Math.floor(sec / 3600);
-  const m = Math.floor((sec % 3600) / 60);
-  const s = sec % 60;
-  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-  return `${m}:${String(s).padStart(2, "0")}`;
-}
 
-function formatPace(secPerKm: number): string {
-  const m = Math.floor(secPerKm / 60);
-  const s = Math.round(secPerKm % 60);
-  return `${m}:${String(s).padStart(2, "0")}`;
-}
-
-function formatDistance(meters: number): string {
-  if (meters >= 1000) return `${(meters / 1000).toFixed(2)} km`;
-  return `${Math.round(meters)} m`;
-}
 
 // Simple SVG sparkline chart
 function MiniChart({ data, color, height = 80, label }: {
@@ -187,9 +154,7 @@ export function ActivityDetailPage() {
       scrollWheelZoom: false,
     });
 
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-      maxZoom: 19,
-    }).addTo(map);
+    L.tileLayer(CARTO_DARK_TILES, { maxZoom: 19 }).addTo(map);
 
     const line = L.polyline(coords, {
       color: "oklch(0.75 0.18 30)",
