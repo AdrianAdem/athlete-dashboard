@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import { RefreshCw, Activity, Clock, MapPin, Flame, Mountain, Gauge, Heart, Link2, Play, X } from "lucide-react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { RefreshCw, Activity, Clock, MapPin, Flame, Mountain, Gauge, Heart, Link2, Play, X, Trophy } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -17,6 +17,15 @@ const activityIcons: Record<string, string> = {
   run: "\u{1F3C3}", ride: "\u{1F6B4}", swim: "\u{1F3CA}", walk: "\u{1F6B6}",
   hike: "\u{1F97E}", weight_training: "\u{1F3CB}", workout: "\u{1F4AA}",
   yoga: "\u{1F9D8}", crossfit: "\u{1F3CB}", rowing: "\u{1F6A3}",
+};
+
+// Accent color per activity type
+const activityAccent: Record<string, string> = {
+  run: "#FC4C02",
+  ride: "#3B82F6",
+  swim: "#06B6D4",
+  walk: "#22C55E",
+  hike: "#F59E0B",
 };
 
 function decodePolyline(encoded: string): [number, number][] {
@@ -53,8 +62,83 @@ function formatDistance(meters: number): string {
   return `${Math.round(meters)} m`;
 }
 
-// Leaflet map that only initializes when scrolled into view
-function LazyRouteMap({ polyline, onClick }: { polyline: string; onClick: () => void }) {
+// Get ISO week number
+function getWeekNumber(d: Date): number {
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  date.setUTCDate(date.getUTCDate() + 4 - (date.getUTCDay() || 7));
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  return Math.ceil(((date.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+}
+
+// Group activities by ISO week
+function groupByWeek(activities: CardioActivity[]): { weekLabel: string; weekNum: number; items: CardioActivity[]; totalDist: number; totalTime: number; count: number }[] {
+  const groups = new Map<string, CardioActivity[]>();
+
+  for (const a of activities) {
+    const d = new Date(a.start_date);
+    const wn = getWeekNumber(d);
+    const yr = d.getFullYear();
+    const key = `${yr}-W${wn}`;
+    const list = groups.get(key) ?? [];
+    list.push(a);
+    groups.set(key, list);
+  }
+
+  return Array.from(groups.entries()).map(([key, items]) => {
+    const wn = parseInt(key.split("W")[1]);
+    const now = new Date();
+    const currentWeek = getWeekNumber(now);
+    const currentYear = now.getFullYear();
+    const yr = parseInt(key.split("-")[0]);
+
+    let weekLabel: string;
+    if (yr === currentYear && wn === currentWeek) weekLabel = "Diese Woche";
+    else if (yr === currentYear && wn === currentWeek - 1) weekLabel = "Letzte Woche";
+    else weekLabel = `KW ${wn}`;
+
+    const totalDist = items.reduce((s, a) => s + (a.distance_m ?? 0), 0);
+    const totalTime = items.reduce((s, a) => s + (a.moving_time_sec ?? 0), 0);
+
+    return { weekLabel, weekNum: wn, items, totalDist, totalTime, count: items.length };
+  });
+}
+
+// Determine badges: fastest run, longest distance this week
+function computeBadges(activities: CardioActivity[]): Map<string, string> {
+  const badges = new Map<string, string>();
+  const weeks = new Map<string, CardioActivity[]>();
+
+  for (const a of activities) {
+    const d = new Date(a.start_date);
+    const key = `${d.getFullYear()}-W${getWeekNumber(d)}`;
+    const list = weeks.get(key) ?? [];
+    list.push(a);
+    weeks.set(key, list);
+  }
+
+  for (const [, items] of weeks) {
+    if (items.length < 2) continue;
+
+    // Fastest run (lowest pace)
+    const runs = items.filter((a) => a.activity_type === "run" && a.avg_pace_sec_per_km != null);
+    if (runs.length >= 2) {
+      const fastest = runs.reduce((best, a) => (a.avg_pace_sec_per_km! < best.avg_pace_sec_per_km! ? a : best));
+      badges.set(fastest.id, "Schnellster Lauf");
+    }
+
+    // Longest distance
+    const withDist = items.filter((a) => a.distance_m != null && a.distance_m > 0);
+    if (withDist.length >= 2) {
+      const longest = withDist.reduce((best, a) => ((a.distance_m ?? 0) > (best.distance_m ?? 0) ? a : best));
+      if (!badges.has(longest.id)) badges.set(longest.id, "Längste Distanz");
+    }
+  }
+
+  return badges;
+}
+
+// Leaflet map with gradient route
+function LazyRouteMap({ polyline, accentColor, onClick }: { polyline: string; accentColor: string; onClick: () => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const initialized = useRef(false);
@@ -84,16 +168,38 @@ function LazyRouteMap({ polyline, onClick }: { polyline: string; onClick: () => 
             maxZoom: 19,
           }).addTo(map);
 
-          const line = L.polyline(coords, {
-            color: "oklch(0.75 0.18 30)",
-            weight: 3,
-            opacity: 0.9,
+          // Draw segmented route with gradient effect
+          const segCount = Math.min(coords.length - 1, 20);
+          const step = Math.max(1, Math.floor(coords.length / segCount));
+          for (let i = 0; i < coords.length - 1; i += step) {
+            const end = Math.min(i + step + 1, coords.length);
+            const segment = coords.slice(i, end);
+            const t = i / (coords.length - 1);
+            // Gradient: accent → pink/magenta
+            const opacity = 0.6 + t * 0.35;
+            L.polyline(segment, {
+              color: t < 0.5 ? accentColor : "#E879A0",
+              weight: 3.5,
+              opacity,
+            }).addTo(map);
+          }
+
+          // Glow line underneath
+          L.polyline(coords, {
+            color: accentColor,
+            weight: 8,
+            opacity: 0.15,
           }).addTo(map);
 
-          map.fitBounds(line.getBounds(), { padding: [24, 24] });
+          const bounds = L.latLngBounds(coords);
+          map.fitBounds(bounds, { padding: [28, 28] });
 
-          // Start/end markers
+          // Start marker with glow
+          L.circleMarker(coords[0], { radius: 8, color: "#22c55e", fillColor: "#22c55e", fillOpacity: 0.2, weight: 2 }).addTo(map);
           L.circleMarker(coords[0], { radius: 4, color: "#22c55e", fillColor: "#22c55e", fillOpacity: 1, weight: 0 }).addTo(map);
+
+          // End marker with glow
+          L.circleMarker(coords[coords.length - 1], { radius: 8, color: "#ef4444", fillColor: "#ef4444", fillOpacity: 0.2, weight: 2 }).addTo(map);
           L.circleMarker(coords[coords.length - 1], { radius: 4, color: "#ef4444", fillColor: "#ef4444", fillOpacity: 1, weight: 0 }).addTo(map);
 
           mapRef.current = map;
@@ -105,7 +211,7 @@ function LazyRouteMap({ polyline, onClick }: { polyline: string; onClick: () => 
 
     observer.observe(el);
     return () => { observer.disconnect(); mapRef.current?.remove(); };
-  }, [polyline]);
+  }, [polyline, accentColor]);
 
   return (
     <div className="relative h-[200px] w-full overflow-hidden">
@@ -118,19 +224,24 @@ function LazyRouteMap({ polyline, onClick }: { polyline: string; onClick: () => 
   );
 }
 
-// Feed card for a single activity
-function ActivityCard({ activity, onClick }: { activity: CardioActivity; onClick: () => void }) {
+// Full feed card (for activities >=2km or first in feed)
+function ActivityCard({ activity, badge, onClick }: {
+  activity: CardioActivity;
+  badge: string | null;
+  onClick: () => void;
+}) {
   const raw = activity.raw_data ?? {};
   const polyline = (raw.map as { summary_polyline?: string })?.summary_polyline;
   const dateStr = new Date(activity.start_date);
   const icon = activityIcons[activity.activity_type] ?? "\u{1F3C3}";
   const label = activityLabels[activity.activity_type] ?? activity.activity_type;
+  const accent = activityAccent[activity.activity_type] ?? "#FC4C02";
 
   return (
-    <div className="rounded-2xl bg-[#1A1A1A] overflow-hidden">
+    <div className="rounded-2xl bg-[#1A1A1A] overflow-hidden" style={{ borderLeft: `3px solid ${accent}` }}>
       {/* Header */}
-      <div className="flex items-center gap-3 px-4 pt-4 pb-3" onClick={onClick}>
-        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-neutral-800 text-base">
+      <div className="flex items-center gap-3 px-4 pt-3.5 pb-2.5 cursor-pointer" onClick={onClick}>
+        <div className="flex h-9 w-9 items-center justify-center rounded-full text-base" style={{ backgroundColor: `${accent}15` }}>
           {icon}
         </div>
         <div className="flex-1 min-w-0">
@@ -141,25 +252,32 @@ function ActivityCard({ activity, onClick }: { activity: CardioActivity; onClick
             {dateStr.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })} Uhr
           </p>
         </div>
-        <span className="text-[10px] text-neutral-600 uppercase tracking-wide">{activity.source}</span>
+        {badge && (
+          <span className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide" style={{ backgroundColor: `${accent}20`, color: accent }}>
+            <Trophy className="h-2.5 w-2.5" />{badge}
+          </span>
+        )}
       </div>
 
-      {/* Map */}
+      {/* Map or placeholder */}
       {polyline ? (
-        <LazyRouteMap polyline={polyline} onClick={onClick} />
+        <LazyRouteMap polyline={polyline} accentColor={accent} onClick={onClick} />
       ) : (
         <div
           onClick={onClick}
-          className="flex h-[120px] items-center justify-center bg-neutral-800/40 cursor-pointer"
+          className="flex h-[100px] items-center justify-center cursor-pointer"
+          style={{ backgroundColor: `${accent}08` }}
         >
-          <span className="text-4xl opacity-30">{icon}</span>
+          <span className="text-4xl opacity-20">{icon}</span>
         </div>
       )}
 
-      {/* Stats row */}
-      <div className="flex items-center gap-1 px-4 py-3 overflow-x-auto" onClick={onClick}>
+      {/* Stats */}
+      <div className="flex items-center gap-1.5 px-4 py-3 overflow-x-auto cursor-pointer" onClick={onClick}>
         {activity.distance_m != null && activity.distance_m > 0 && (
-          <StatPill icon={<MapPin className="h-3 w-3 text-blue-400" />} value={formatDistance(activity.distance_m)} />
+          <span className="flex items-center gap-1 rounded-full bg-neutral-800/70 px-2.5 py-1 text-[11px] font-bold text-white whitespace-nowrap shrink-0">
+            <MapPin className="h-3 w-3 text-blue-400" />{formatDistance(activity.distance_m)}
+          </span>
         )}
         {activity.avg_pace_sec_per_km != null && activity.activity_type === "run" && (
           <StatPill icon={<Gauge className="h-3 w-3 text-purple-400" />} value={`${formatPace(activity.avg_pace_sec_per_km)} /km`} />
@@ -184,11 +302,69 @@ function ActivityCard({ activity, onClick }: { activity: CardioActivity; onClick
   );
 }
 
+// Compact card (for short activities <2km, not first)
+function CompactCard({ activity, badge, onClick }: {
+  activity: CardioActivity;
+  badge: string | null;
+  onClick: () => void;
+}) {
+  const dateStr = new Date(activity.start_date);
+  const icon = activityIcons[activity.activity_type] ?? "\u{1F3C3}";
+  const label = activityLabels[activity.activity_type] ?? activity.activity_type;
+  const accent = activityAccent[activity.activity_type] ?? "#FC4C02";
+
+  return (
+    <div
+      onClick={onClick}
+      className="flex items-center gap-3 rounded-xl bg-[#1A1A1A] p-3 cursor-pointer active:scale-[0.98] transition-transform"
+      style={{ borderLeft: `3px solid ${accent}` }}
+    >
+      <span className="text-lg">{icon}</span>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium truncate">{activity.name ?? label}</p>
+        <div className="flex items-center gap-2 text-[11px] text-neutral-500">
+          <span>{dateStr.toLocaleDateString("de-DE", { weekday: "short", day: "numeric", month: "short" })}</span>
+          {activity.distance_m != null && activity.distance_m > 0 && (
+            <span className="font-medium text-neutral-300">{formatDistance(activity.distance_m)}</span>
+          )}
+          {activity.moving_time_sec != null && (
+            <span>{formatDuration(activity.moving_time_sec)}</span>
+          )}
+        </div>
+      </div>
+      {badge && (
+        <span className="flex items-center gap-0.5 text-[9px] font-bold" style={{ color: accent }}>
+          <Trophy className="h-2.5 w-2.5" />
+        </span>
+      )}
+    </div>
+  );
+}
+
 function StatPill({ icon, value }: { icon: React.ReactNode; value: string }) {
   return (
-    <span className="flex items-center gap-1 rounded-full bg-neutral-800/70 px-2.5 py-1 text-[11px] font-medium text-neutral-300 whitespace-nowrap shrink-0">
+    <span className="flex items-center gap-1 rounded-full bg-neutral-800/70 px-2.5 py-1 text-[11px] font-medium text-neutral-400 whitespace-nowrap shrink-0">
       {icon}{value}
     </span>
+  );
+}
+
+// Week separator
+function WeekHeader({ label, dist, time, count }: { label: string; dist: number; time: number; count: number }) {
+  return (
+    <div className="flex items-center gap-3 py-2">
+      <div className="h-px flex-1 bg-neutral-800" />
+      <div className="flex items-center gap-2 text-[10px] text-neutral-500">
+        <span className="font-semibold uppercase tracking-wider">{label}</span>
+        <span className="text-neutral-600">·</span>
+        <span>{formatDistance(dist)}</span>
+        <span className="text-neutral-600">·</span>
+        <span>{formatDuration(time)}</span>
+        <span className="text-neutral-600">·</span>
+        <span>{count} {count === 1 ? "Aktivität" : "Aktivitäten"}</span>
+      </div>
+      <div className="h-px flex-1 bg-neutral-800" />
+    </div>
   );
 }
 
@@ -229,21 +405,15 @@ export function AusdauerPage() {
     }
   };
 
-  // Weekly stats
-  const weekStart = new Date();
-  weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1);
-  weekStart.setHours(0, 0, 0, 0);
-  const weekActivities = activities.filter((a) => new Date(a.start_date) >= weekStart);
-  const weekDistance = weekActivities.reduce((s, a) => s + (a.distance_m ?? 0), 0);
-  const weekDuration = weekActivities.reduce((s, a) => s + (a.moving_time_sec ?? 0), 0);
-  const weekCalories = weekActivities.reduce((s, a) => s + (a.calories ?? 0), 0);
+  const weeks = useMemo(() => groupByWeek(activities), [activities]);
+  const badges = useMemo(() => computeBadges(activities), [activities]);
 
   if (loading) {
     return <div className="flex min-h-screen items-center justify-center text-neutral-500">Laden...</div>;
   }
 
   return (
-    <div className="space-y-4 p-4 pb-24">
+    <div className="space-y-3 p-4 pb-24">
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Ausdauer</h1>
@@ -258,17 +428,6 @@ export function AusdauerPage() {
           </button>
         )}
       </div>
-
-      {/* Weekly summary */}
-      {weekActivities.length > 0 && (
-        <div className="flex items-center gap-4 rounded-xl bg-[#1A1A1A] px-4 py-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">Woche</p>
-          <span className="text-xs font-bold">{formatDistance(weekDistance)}</span>
-          <span className="text-xs text-neutral-400">{formatDuration(weekDuration)}</span>
-          {weekCalories > 0 && <span className="text-xs text-neutral-500">{weekCalories} kcal</span>}
-          <span className="text-[10px] text-neutral-600 ml-auto">{weekActivities.length} Aktivitäten</span>
-        </div>
-      )}
 
       {/* Empty: not connected */}
       {!stravaConnected && activities.length === 0 && (
@@ -303,23 +462,28 @@ export function AusdauerPage() {
         </div>
       )}
 
-      {/* Feed */}
-      {activities.length > 0 && (
-        <div className="space-y-4">
-          {activities.map((a) => (
-            <ActivityCard
-              key={a.id}
-              activity={a}
-              onClick={() => navigate(`/ausdauer/${a.id}`)}
-            />
-          ))}
+      {/* Feed grouped by week */}
+      {weeks.map((week, wi) => (
+        <div key={week.weekLabel + week.weekNum} className="space-y-3">
+          <WeekHeader label={week.weekLabel} dist={week.totalDist} time={week.totalTime} count={week.count} />
+          {week.items.map((a, ai) => {
+            const isFirst = wi === 0 && ai === 0;
+            const isShort = (a.distance_m ?? 0) < 2000 && !isFirst;
+            const badge = badges.get(a.id) ?? null;
+
+            return isShort ? (
+              <CompactCard key={a.id} activity={a} badge={badge} onClick={() => navigate(`/ausdauer/${a.id}`)} />
+            ) : (
+              <ActivityCard key={a.id} activity={a} badge={badge} onClick={() => navigate(`/ausdauer/${a.id}`)} />
+            );
+          })}
         </div>
-      )}
+      ))}
 
       {/* FAB: Start Training */}
       <button
         onClick={() => setShowStartMenu(true)}
-        className="fixed bottom-20 right-4 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-[#FC4C02] shadow-lg shadow-[#FC4C02]/30 active:scale-90 transition-transform"
+        className="fixed bottom-20 right-4 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-[#FC4C02] shadow-lg shadow-[#FC4C02]/30 active:scale-90 transition-transform animate-fab-pulse"
       >
         <Play className="h-6 w-6 text-white ml-0.5" />
       </button>
@@ -335,16 +499,20 @@ export function AusdauerPage() {
               </button>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              {ACTIVITY_TYPES.map((t) => (
-                <button
-                  key={t.key}
-                  onClick={() => navigate(`/ausdauer/training?type=${t.key}`)}
-                  className="flex items-center gap-3 rounded-xl bg-neutral-800 p-4 active:scale-[0.97] transition-transform"
-                >
-                  <span className="text-2xl">{t.icon}</span>
-                  <span className="text-sm font-semibold">{t.label}</span>
-                </button>
-              ))}
+              {ACTIVITY_TYPES.map((t) => {
+                const accent = activityAccent[t.key] ?? "#FC4C02";
+                return (
+                  <button
+                    key={t.key}
+                    onClick={() => navigate(`/ausdauer/training?type=${t.key}`)}
+                    className="flex items-center gap-3 rounded-xl bg-neutral-800 p-4 active:scale-[0.97] transition-transform"
+                    style={{ borderLeft: `3px solid ${accent}` }}
+                  >
+                    <span className="text-2xl">{t.icon}</span>
+                    <span className="text-sm font-semibold">{t.label}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
