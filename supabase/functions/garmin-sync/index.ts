@@ -92,12 +92,48 @@ async function getValidToken(): Promise<string> {
   return stored.access_token;
 }
 
-// ── Ticket Exchange (browser does SSO login, sends ticket here) ──
+// ── Direct Login (DI OAuth2 password grant) ────────────────────
+
+async function handleLogin(email: string, password: string) {
+  if (!email || !password) throw new Error("Email and password required");
+
+  const diRes = await fetch(DI_AUTH_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Authorization: `Basic ${btoa(`${DI_CLIENT_ID}:`)}`,
+    },
+    body: new URLSearchParams({
+      grant_type: "password",
+      client_id: DI_CLIENT_ID,
+      username: email,
+      password: password,
+    }),
+  });
+
+  if (!diRes.ok) {
+    const err = await diRes.text();
+    throw new Error(`Garmin login failed: ${diRes.status} ${err}`);
+  }
+
+  const diData = await diRes.json();
+
+  const token: TokenData = {
+    access_token: diData.access_token,
+    refresh_token: diData.refresh_token,
+    expires_at: Date.now() + diData.expires_in * 1000,
+  };
+
+  await storeToken(token);
+
+  return { success: true, expiresIn: diData.expires_in };
+}
+
+// ── Ticket Exchange (kept as fallback) ─────────────────────────
 
 async function handleExchangeTicket(ticket: string, serviceUrl?: string) {
   if (!ticket) throw new Error("No service ticket provided");
 
-  // service_url must match what was passed to SSO embed
   const svcUrl = serviceUrl ?? `${CONNECT_BASE}/modern`;
 
   const diRes = await fetch(DI_AUTH_URL, {
@@ -329,6 +365,9 @@ serve(async (req) => {
 
     let result;
     switch (path) {
+      case "login":
+        result = await handleLogin(body.email, body.password);
+        break;
       case "exchange-ticket":
         result = await handleExchangeTicket(body.ticket, body.service_url);
         break;

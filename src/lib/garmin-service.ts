@@ -3,9 +3,7 @@
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const GARMIN_API = `${SUPABASE_URL}/functions/v1/garmin-sync`;
 
-const GARMIN_SSO_SIGNIN = "https://sso.garmin.com/sso/signin";
-// Static callback page — extracts ticket and posts to opener via postMessage
-const GARMIN_SERVICE_URL = `${window.location.origin}${import.meta.env.BASE_URL}garmin-callback.html`;
+// No SSO popup needed — direct credential login via DI OAuth2
 
 async function garminFetch(endpoint: string, body: Record<string, unknown> = {}) {
   const res = await fetch(`${GARMIN_API}/${endpoint}`, {
@@ -29,97 +27,11 @@ export async function getGarminStatus(): Promise<{
 }
 
 /**
- * Opens Garmin SSO embed in a popup.
- * After login, embed page posts message with { serviceTicket } to window.opener.
- * We listen for that message to extract the ticket.
+ * Direct credential login via edge function.
+ * Edge function uses DI OAuth2 password grant — no SSO popup needed.
  */
-export function openGarminLogin(): Promise<{ success: boolean; expiresIn: number }> {
-  return new Promise((resolve, reject) => {
-    const params = new URLSearchParams({
-      clientId: "GarminConnect",
-      locale: "en",
-      service: GARMIN_SERVICE_URL,
-      gauthHost: "https://sso.garmin.com/sso",
-    });
-
-    const loginUrl = `${GARMIN_SSO_SIGNIN}?${params}`;
-    const width = 450;
-    const height = 600;
-    const left = window.screenX + (window.innerWidth - width) / 2;
-    const top = window.screenY + (window.innerHeight - height) / 2;
-
-    const popup = window.open(
-      loginUrl,
-      "garmin_login",
-      `width=${width},height=${height},left=${left},top=${top},toolbar=no,menubar=no`,
-    );
-
-    if (!popup) {
-      reject(new Error("Popup blocked. Bitte Popups erlauben."));
-      return;
-    }
-
-    let settled = false;
-    const cleanup = () => {
-      window.removeEventListener("message", onMessage);
-      clearInterval(interval);
-      clearTimeout(timeout);
-    };
-    const settle = (fn: () => void) => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      fn();
-    };
-
-    // Listen for postMessage from garmin-callback.html (same-origin)
-    const onMessage = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) return;
-      const ticket = event.data?.garminTicket;
-      if (!ticket) return;
-      popup.close();
-      settle(() => {
-        garminFetch("exchange-ticket", {
-          ticket,
-          service_url: GARMIN_SERVICE_URL,
-        }).then(resolve).catch(reject);
-      });
-    };
-    window.addEventListener("message", onMessage);
-
-    // Fallback: poll for popup close or same-origin URL with ticket
-    const interval = setInterval(() => {
-      if (settled) return;
-      try {
-        if (popup.closed) {
-          // Give message event a moment to fire before rejecting
-          setTimeout(() => settle(() => reject(new Error("Login abgebrochen"))), 300);
-          return;
-        }
-        // Backup: read URL directly if popup landed on our callback page
-        const url = popup.location.href;
-        if (url.includes("ticket=")) {
-          const match = url.match(/[?&]ticket=([^&]+)/);
-          if (match) {
-            popup.close();
-            settle(() => {
-              garminFetch("exchange-ticket", {
-                ticket: match[1],
-                service_url: GARMIN_SERVICE_URL,
-              }).then(resolve).catch(reject);
-            });
-          }
-        }
-      } catch {
-        // Cross-origin — popup still on garmin.com
-      }
-    }, 500);
-
-    const timeout = setTimeout(() => {
-      if (!popup.closed) popup.close();
-      settle(() => reject(new Error("Login Timeout (5 Minuten)")));
-    }, 5 * 60 * 1000);
-  });
+export async function loginGarmin(email: string, password: string): Promise<{ success: boolean; expiresIn: number }> {
+  return garminFetch("login", { email, password });
 }
 
 export async function syncGarminHealth(date?: string): Promise<Record<string, unknown>> {
