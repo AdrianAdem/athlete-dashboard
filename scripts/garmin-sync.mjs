@@ -15,7 +15,7 @@
 //   VITE_SUPABASE_URL  (or SUPABASE_URL)
 //   SUPABASE_SERVICE_ROLE_KEY
 
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { webcrypto } from "node:crypto";
@@ -98,7 +98,75 @@ async function oauth1Header(method, baseUrl, reqParams, cc, token = "", tokenSec
   return "OAuth " + Object.keys(oauth).sort().map((k) => `${pct(k)}="${pct(oauth[k])}"`).join(", ");
 }
 
-async function login() {
+// OAuth1 -> OAuth2 token exchange. Used for both the initial login and for
+// cheap refreshes (no full SSO) when we still hold the OAuth1 credentials.
+async function exchangeOAuth2(cc, oauth1Token, oauth1Secret) {
+  const exUrl = `${OAUTH_SERVICE}/exchange/user/2.0`;
+  const exHeader = await oauth1Header("POST", exUrl, {}, cc, oauth1Token, oauth1Secret);
+  const res = await fetch(exUrl, {
+    method: "POST",
+    headers: { Authorization: exHeader, "User-Agent": MOBILE_UA, "Content-Type": "application/x-www-form-urlencoded" },
+    body: "",
+  });
+  if (!res.ok) throw new Error(`OAuth2-Exchange fehlgeschlagen: ${res.status} ${await res.text()}`);
+  return res.json();
+}
+
+// Cache tokens locally so frequent polling doesn't trigger a full SSO login
+// (and risk Garmin flagging the account) on every run.
+const TOKEN_FILE = join(dirname(fileURLToPath(import.meta.url)), ".garmin-tokens.json");
+
+function loadTokens() {
+  try {
+    return JSON.parse(readFileSync(TOKEN_FILE, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function saveTokens(t) {
+  writeFileSync(TOKEN_FILE, JSON.stringify(t), { mode: 0o600 });
+}
+
+async function getAccessToken() {
+  const now = Date.now();
+  const cached = loadTokens();
+  // Valid, unexpired access token — reuse as-is.
+  if (cached?.access_token && cached.expires_at > now + 60_000) return cached.access_token;
+
+  const cc = await getConsumerCredentials();
+
+  // Have OAuth1 creds — refresh without a full SSO login.
+  if (cached?.oauth1_token && cached?.oauth1_secret) {
+    try {
+      const o2 = await exchangeOAuth2(cc, cached.oauth1_token, cached.oauth1_secret);
+      saveTokens({
+        access_token: o2.access_token,
+        expires_at: now + (o2.expires_in ?? 3599) * 1000,
+        oauth1_token: cached.oauth1_token,
+        oauth1_secret: cached.oauth1_secret,
+      });
+      return o2.access_token;
+    } catch {
+      // Refresh failed (revoked/expired) — fall through to full login.
+    }
+  }
+
+  const { oauth1, o2 } = await fullLogin(cc);
+  saveTokens({
+    access_token: o2.access_token,
+    expires_at: now + (o2.expires_in ?? 3599) * 1000,
+    oauth1_token: oauth1.oauth_token,
+    oauth1_secret: oauth1.oauth_token_secret,
+  });
+  return o2.access_token;
+}
+
+async function getConsumerCredentials() {
+  return (await fetch(CONSUMER_URL)).json();
+}
+
+async function fullLogin(cc) {
   const jar = new Map();
   const absorb = (res) => {
     for (const c of res.headers.getSetCookie()) {
@@ -133,7 +201,6 @@ async function login() {
   const ticket = (await res.text()).match(/embed\?ticket=([^"]+)"/)?.[1];
   if (!ticket) throw new Error("Kein Ticket — falsche Zugangsdaten oder MFA aktiv");
 
-  const cc = await (await fetch(CONSUMER_URL)).json();
   const preParams = { ticket, "login-url": SSO_EMBED, "accepts-mfa-tokens": "true" };
   const preHeader = await oauth1Header("GET", `${OAUTH_SERVICE}/preauthorized`, preParams, cc);
   res = await fetch(`${OAUTH_SERVICE}/preauthorized?${new URLSearchParams(preParams)}`, {
@@ -143,16 +210,8 @@ async function login() {
   const oauth1 = Object.fromEntries(new URLSearchParams(await res.text()));
   if (!oauth1.oauth_token) throw new Error("OAuth1-Token fehlt");
 
-  const exUrl = `${OAUTH_SERVICE}/exchange/user/2.0`;
-  const exHeader = await oauth1Header("POST", exUrl, {}, cc, oauth1.oauth_token, oauth1.oauth_token_secret);
-  res = await fetch(exUrl, {
-    method: "POST",
-    headers: { Authorization: exHeader, "User-Agent": MOBILE_UA, "Content-Type": "application/x-www-form-urlencoded" },
-    body: "",
-  });
-  if (!res.ok) throw new Error(`OAuth2-Exchange fehlgeschlagen: ${res.status} ${await res.text()}`);
-  const o2 = await res.json();
-  return o2.access_token;
+  const o2 = await exchangeOAuth2(cc, oauth1.oauth_token, oauth1.oauth_token_secret);
+  return { oauth1, o2 };
 }
 
 // ── Garmin data fetch ───────────────────────────────────────────────
@@ -255,7 +314,7 @@ async function main() {
   const days = Math.max(1, Math.min(31, parseInt(process.argv[2] ?? "7", 10) || 7));
 
   console.log("Garmin Login...");
-  const token = await login();
+  const token = await getAccessToken();
   const displayName = await getDisplayName(token);
   console.log("Verbunden. Sync " + days + " Tage...");
 
