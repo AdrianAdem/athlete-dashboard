@@ -71,24 +71,21 @@ export function SwipeRow({
     }
   };
 
-  // Trash icon stays pinned to the right edge of the revealed area, so it slides
-  // in from the side as the content moves and grows toward a full-width swipe.
-  const revealed = -dx;
-  const iconShift = Math.max(0, (REVEAL - revealed) / 2);
+  // Red zone is only as wide as the content is dragged aside. At rest its width
+  // is 0, so nothing peeks through the rounded corners behind the card.
+  const revealed = Math.max(0, -dx);
 
   return (
     <div ref={wrap} className={cn("relative overflow-hidden", rounded, className)}>
-      <div className="absolute inset-0 flex items-center justify-end bg-red-500 text-white">
-        <button
-          type="button"
-          onClick={onDelete}
-          aria-label="Löschen"
-          className="flex h-full items-center justify-center active:bg-red-600"
-          style={{ width: REVEAL, transform: `translateX(${iconShift}px)` }}
-        >
-          <Trash2 className="h-5 w-5" />
-        </button>
-      </div>
+      <button
+        type="button"
+        onClick={onDelete}
+        aria-label="Löschen"
+        className="absolute inset-y-0 right-0 flex items-center justify-center overflow-hidden bg-red-500 text-white active:bg-red-600"
+        style={{ width: revealed }}
+      >
+        <Trash2 className="h-5 w-5 shrink-0" />
+      </button>
       <div
         className={cn("relative", surface)}
         style={{
