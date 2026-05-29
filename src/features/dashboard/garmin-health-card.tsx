@@ -1,56 +1,41 @@
 import { useState, useEffect } from "react";
 import {
   Heart, Moon, Activity, Footprints,
-  Battery, Wind, RefreshCw,
+  Battery, Wind,
 } from "lucide-react";
-import { getGarminStatus, getGarminData, syncGarminHealth } from "@/lib/garmin-service";
+import { getGarminData } from "@/lib/garmin-service";
 import type { GarminHealthData } from "@/lib/garmin-service";
 import { cn } from "@/lib/utils";
 
-function todayStr() {
-  return new Date().toISOString().split("T")[0];
+function dateStr(daysAgo = 0) {
+  const d = new Date();
+  d.setDate(d.getDate() - daysAgo);
+  return d.toISOString().split("T")[0];
 }
 
 export function GarminHealthCard() {
-  const [connected, setConnected] = useState(false);
   const [health, setHealth] = useState<GarminHealthData | null>(null);
-  const [syncing, setSyncing] = useState(false);
   const [checked, setChecked] = useState(false);
 
   useEffect(() => {
     const load = async () => {
       try {
-        const status = await getGarminStatus();
-        const isConnected = status.connected && !status.expired;
-        setConnected(isConnected);
-        if (isConnected) {
-          const today = todayStr();
-          const entries = await getGarminData(today, today);
-          if (entries.length > 0) setHealth(entries[0].data);
-        }
+        // Data is pushed by the local sync script; show the most recent day
+        // that actually has daily metrics (today is often still incomplete).
+        const entries = await getGarminData(dateStr(7), dateStr(0));
+        const sorted = entries.sort((a, b) => b.date.localeCompare(a.date));
+        const latest = sorted.find((e) => e.data?.daily) ?? sorted[0];
+        if (latest) setHealth(latest.data);
       } catch {
-        // Not connected or fetch failed
+        // No data yet or fetch failed
       }
       setChecked(true);
     };
     load();
   }, []);
 
-  const handleSync = async () => {
-    setSyncing(true);
-    try {
-      await syncGarminHealth();
-      const today = todayStr();
-      const entries = await getGarminData(today, today);
-      if (entries.length > 0) setHealth(entries[0].data);
-    } catch {
-      // Sync failed silently
-    }
-    setSyncing(false);
-  };
-
-  // Don't render until status checked, hide if not connected
-  if (!checked || !connected) return null;
+  // Don't render until checked; hide if no data has been synced yet
+  if (!checked || !health) return null;
 
   const d = health?.daily;
   const s = health?.sleep;
@@ -78,29 +63,11 @@ export function GarminHealthCard() {
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3">
         <h2 className="text-lg font-bold">Gesundheit</h2>
-        <button
-          onClick={handleSync}
-          disabled={syncing}
-          className="rounded-lg p-1.5 text-neutral-500 active:scale-[0.95]"
-        >
-          <RefreshCw className={cn("h-4 w-4", syncing && "animate-spin")} />
-        </button>
       </div>
 
-      {!health ? (
-        <div className="rounded-xl bg-card p-6 text-center">
-          <p className="text-sm text-neutral-500">Keine Daten für heute</p>
-          <button
-            onClick={handleSync}
-            className="mt-2 text-xs text-blue-400"
-          >
-            Jetzt synchronisieren
-          </button>
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-2 gap-2">
           {/* Resting HR */}
           <MetricTile
             icon={<Heart className="h-4 w-4 text-red-400" />}
@@ -157,8 +124,7 @@ export function GarminHealthCard() {
               <SleepBar sleep={s} />
             </div>
           )}
-        </div>
-      )}
+      </div>
     </div>
   );
 }

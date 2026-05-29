@@ -13,9 +13,7 @@ const corsHeaders = {
 };
 
 const GARMIN_DOMAIN = "garmin.com";
-const DI_AUTH_URL = `https://diauth.${GARMIN_DOMAIN}/di-oauth2-service/oauth/token`;
-const CONNECT_BASE = `https://connect.${GARMIN_DOMAIN}`;
-const DI_CLIENT_ID = "GCM_ANDROID";
+const CONNECT_BASE = `https://connectapi.${GARMIN_DOMAIN}`;
 
 const supabaseAdmin = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -30,12 +28,15 @@ interface TokenData {
   access_token: string;
   refresh_token: string;
   expires_at: number; // unix ms
+  // OAuth1 credentials are long-lived (~1 year) and used to re-mint OAuth2 tokens
+  oauth1_token: string;
+  oauth1_secret: string;
 }
 
 async function getStoredToken(): Promise<TokenData | null> {
   const { data } = await supabaseAdmin
     .from("garmin_tokens")
-    .select("access_token, refresh_token, expires_at")
+    .select("access_token, refresh_token, expires_at, oauth1_token, oauth1_secret")
     .eq("user_id", USER_ID)
     .single();
   return data ?? null;
@@ -47,44 +48,29 @@ async function storeToken(token: TokenData) {
     access_token: token.access_token,
     refresh_token: token.refresh_token,
     expires_at: token.expires_at,
+    oauth1_token: token.oauth1_token,
+    oauth1_secret: token.oauth1_secret,
     updated_at: new Date().toISOString(),
   }, { onConflict: "user_id" });
-}
-
-async function refreshDIToken(refreshToken: string): Promise<TokenData> {
-  const res = await fetch(DI_AUTH_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      Authorization: `Basic ${btoa(`${DI_CLIENT_ID}:`)}`,
-    },
-    body: new URLSearchParams({
-      grant_type: "refresh_token",
-      client_id: DI_CLIENT_ID,
-      refresh_token: refreshToken,
-    }),
-  });
-
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Token refresh failed: ${res.status} ${err}`);
-  }
-
-  const data = await res.json();
-  return {
-    access_token: data.access_token,
-    refresh_token: data.refresh_token,
-    expires_at: Date.now() + data.expires_in * 1000,
-  };
 }
 
 async function getValidToken(): Promise<string> {
   const stored = await getStoredToken();
   if (!stored) throw new Error("Not logged in. Call /login first.");
 
-  // Refresh if expiring within 15 min
+  // Refresh if expiring within 15 min by re-running the OAuth2 exchange with
+  // the long-lived OAuth1 token (Garmin OAuth2 tokens last ~1h).
   if (Date.now() > stored.expires_at - 15 * 60 * 1000) {
-    const refreshed = await refreshDIToken(stored.refresh_token);
+    if (!stored.oauth1_token) throw new Error("No OAuth1 token. Please log in again.");
+    const cc = await getConsumerCredentials();
+    const o2 = await exchangeOAuth2(cc, stored.oauth1_token, stored.oauth1_secret);
+    const refreshed: TokenData = {
+      access_token: o2.access_token,
+      refresh_token: o2.refresh_token,
+      expires_at: Date.now() + o2.expires_in * 1000,
+      oauth1_token: stored.oauth1_token,
+      oauth1_secret: stored.oauth1_secret,
+    };
     await storeToken(refreshed);
     return refreshed.access_token;
   }
@@ -92,86 +78,208 @@ async function getValidToken(): Promise<string> {
   return stored.access_token;
 }
 
-// ── Direct Login (DI OAuth2 password grant) ────────────────────
+// ── Server-side Garmin SSO login (garth-style OAuth1 -> OAuth2) ──
 
-async function handleLogin(email: string, password: string) {
-  if (!email || !password) throw new Error("Email and password required");
+const SSO = "https://sso.garmin.com/sso";
+const SSO_EMBED = `${SSO}/embed`;
+const OAUTH_SERVICE = "https://connectapi.garmin.com/oauth-service/oauth";
+// Public consumer credentials shared by all unofficial Garmin clients.
+const CONSUMER_URL = "https://thegarth.s3.amazonaws.com/oauth_consumer.json";
+const BROWSER_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+const MOBILE_UA = "com.garmin.android.apps.connectmobile";
 
-  const diRes = await fetch(DI_AUTH_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      Authorization: `Basic ${btoa(`${DI_CLIENT_ID}:`)}`,
-    },
-    body: new URLSearchParams({
-      grant_type: "password",
-      client_id: DI_CLIENT_ID,
-      username: email,
-      password: password,
-    }),
-  });
-
-  if (!diRes.ok) {
-    const err = await diRes.text();
-    throw new Error(`Garmin login failed: ${diRes.status} ${err}`);
-  }
-
-  const diData = await diRes.json();
-
-  const token: TokenData = {
-    access_token: diData.access_token,
-    refresh_token: diData.refresh_token,
-    expires_at: Date.now() + diData.expires_in * 1000,
-  };
-
-  await storeToken(token);
-
-  return { success: true, expiresIn: diData.expires_in };
+interface ConsumerCreds {
+  consumer_key: string;
+  consumer_secret: string;
 }
 
-// ── Ticket Exchange (kept as fallback) ─────────────────────────
+// connectapi.garmin.com rate-limits aggressively per IP (429). Retry with backoff.
+async function fetchRetry(url: string, init: RequestInit, tries = 4): Promise<Response> {
+  let delay = 2000;
+  for (let i = 0; ; i++) {
+    const res = await fetch(url, init);
+    if (res.status !== 429 || i === tries - 1) return res;
+    await res.body?.cancel();
+    await new Promise((r) => setTimeout(r, delay));
+    delay *= 2;
+  }
+}
 
-async function handleExchangeTicket(ticket: string, serviceUrl?: string) {
-  if (!ticket) throw new Error("No service ticket provided");
+async function getConsumerCredentials(): Promise<ConsumerCreds> {
+  const res = await fetch(CONSUMER_URL);
+  if (!res.ok) throw new Error(`Consumer creds fetch failed: ${res.status}`);
+  return res.json();
+}
 
-  const svcUrl = serviceUrl ?? `${CONNECT_BASE}/modern`;
+// RFC 3986 percent-encoding (encodeURIComponent + the 4 extra chars).
+function pct(s: string): string {
+  return encodeURIComponent(s).replace(
+    /[!'()*]/g,
+    (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase(),
+  );
+}
 
-  const diRes = await fetch(DI_AUTH_URL, {
+async function hmacSha1(key: string, base: string): Promise<string> {
+  const enc = new TextEncoder();
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(key),
+    { name: "HMAC", hash: "SHA-1" },
+    false,
+    ["sign"],
+  );
+  const sig = await crypto.subtle.sign("HMAC", cryptoKey, enc.encode(base));
+  return btoa(String.fromCharCode(...new Uint8Array(sig)));
+}
+
+async function oauth1Header(
+  method: string,
+  baseUrl: string,
+  reqParams: Record<string, string>,
+  cc: ConsumerCreds,
+  token = "",
+  tokenSecret = "",
+): Promise<string> {
+  const oauth: Record<string, string> = {
+    oauth_consumer_key: cc.consumer_key,
+    oauth_nonce: crypto.randomUUID().replace(/-/g, ""),
+    oauth_signature_method: "HMAC-SHA1",
+    oauth_timestamp: Math.floor(Date.now() / 1000).toString(),
+    oauth_version: "1.0",
+  };
+  if (token) oauth.oauth_token = token;
+
+  const all = { ...reqParams, ...oauth };
+  const paramStr = Object.keys(all)
+    .sort()
+    .map((k) => `${pct(k)}=${pct(all[k])}`)
+    .join("&");
+  const base = `${method.toUpperCase()}&${pct(baseUrl)}&${pct(paramStr)}`;
+  const signingKey = `${pct(cc.consumer_secret)}&${pct(tokenSecret)}`;
+  oauth.oauth_signature = await hmacSha1(signingKey, base);
+
+  return "OAuth " +
+    Object.keys(oauth)
+      .sort()
+      .map((k) => `${pct(k)}="${pct(oauth[k])}"`)
+      .join(", ");
+}
+
+async function exchangeOAuth2(
+  cc: ConsumerCreds,
+  oauth1Token: string,
+  oauth1Secret: string,
+): Promise<{ access_token: string; refresh_token: string; expires_in: number }> {
+  const url = `${OAUTH_SERVICE}/exchange/user/2.0`;
+  const header = await oauth1Header("POST", url, {}, cc, oauth1Token, oauth1Secret);
+  const res = await fetchRetry(url, {
     method: "POST",
     headers: {
+      Authorization: header,
+      "User-Agent": MOBILE_UA,
       "Content-Type": "application/x-www-form-urlencoded",
-      Authorization: `Basic ${btoa(`${DI_CLIENT_ID}:`)}`,
     },
-    body: new URLSearchParams({
-      grant_type: "urn:ietf:params:oauth:grant-type:cas-ticket",
-      client_id: DI_CLIENT_ID,
-      service_ticket: ticket,
-      service_url: svcUrl,
-    }),
+    body: "",
   });
+  if (!res.ok) throw new Error(`OAuth2 exchange failed: ${res.status} ${await res.text()}`);
+  return res.json();
+}
 
-  if (!diRes.ok) {
-    const err = await diRes.text();
-    throw new Error(`DI token exchange failed: ${diRes.status} ${err}`);
+async function handleLogin(email: string, password: string): Promise<{ connected: true }> {
+  if (!email || !password) throw new Error("Email and password required");
+
+  // Manual cookie jar — Deno fetch does not persist cookies across calls.
+  const jar = new Map<string, string>();
+  const absorb = (res: Response) => {
+    for (const c of res.headers.getSetCookie()) {
+      const pair = c.split(";")[0];
+      const i = pair.indexOf("=");
+      if (i > 0) jar.set(pair.slice(0, i).trim(), pair.slice(i + 1).trim());
+    }
+  };
+  const cookieHeader = () => [...jar].map(([k, v]) => `${k}=${v}`).join("; ");
+
+  // 1. Warm up: GET embed widget to seed Cloudflare + session cookies.
+  const embedQs = new URLSearchParams({ id: "gauth-widget", embedWidget: "true", gauthHost: SSO });
+  const embedUrl = `${SSO_EMBED}?${embedQs}`;
+  let res = await fetch(embedUrl, { headers: { "User-Agent": BROWSER_UA } });
+  absorb(res);
+  await res.text();
+
+  // 2. GET signin to obtain the CSRF token.
+  const signinQs = new URLSearchParams({
+    id: "gauth-widget",
+    embedWidget: "true",
+    gauthHost: SSO_EMBED,
+    service: SSO_EMBED,
+    source: SSO_EMBED,
+    redirectAfterAccountLoginUrl: SSO_EMBED,
+    redirectAfterAccountCreationUrl: SSO_EMBED,
+  });
+  const signinUrl = `${SSO}/signin?${signinQs}`;
+  res = await fetch(signinUrl, {
+    headers: { "User-Agent": BROWSER_UA, Referer: embedUrl, Cookie: cookieHeader() },
+  });
+  absorb(res);
+  const signinHtml = await res.text();
+  const csrf = signinHtml.match(/name="_csrf"\s+value="([^"]+)"/)?.[1];
+  if (!csrf) throw new Error(`Login page blocked (status ${res.status}) — no CSRF token`);
+
+  // 3. POST credentials.
+  res = await fetch(signinUrl, {
+    method: "POST",
+    headers: {
+      "User-Agent": BROWSER_UA,
+      "Content-Type": "application/x-www-form-urlencoded",
+      Referer: signinUrl,
+      Cookie: cookieHeader(),
+    },
+    body: new URLSearchParams({ username: email, password, embed: "true", _csrf: csrf }),
+  });
+  absorb(res);
+  const loginHtml = await res.text();
+  const ticket = loginHtml.match(/embed\?ticket=([^"]+)"/)?.[1];
+  if (!ticket) {
+    if (/sign in|incorrect|invalid/i.test(loginHtml)) {
+      throw new Error("Falsche E-Mail/Passwort oder MFA aktiv");
+    }
+    throw new Error(`Kein Ticket erhalten (status ${res.status})`);
   }
 
-  const diData = await diRes.json();
-
-  const token: TokenData = {
-    access_token: diData.access_token,
-    refresh_token: diData.refresh_token,
-    expires_at: Date.now() + diData.expires_in * 1000,
+  // 4. Exchange ticket for OAuth1 token (signed request, no token yet).
+  const cc = await getConsumerCredentials();
+  const preParams: Record<string, string> = {
+    ticket,
+    "login-url": SSO_EMBED,
+    "accepts-mfa-tokens": "true",
   };
+  const preUrl = `${OAUTH_SERVICE}/preauthorized`;
+  const preHeader = await oauth1Header("GET", preUrl, preParams, cc);
+  res = await fetchRetry(`${preUrl}?${new URLSearchParams(preParams)}`, {
+    headers: { Authorization: preHeader, "User-Agent": MOBILE_UA },
+  });
+  if (!res.ok) throw new Error(`OAuth1 failed: ${res.status} ${await res.text()}`);
+  const oauth1 = Object.fromEntries(new URLSearchParams(await res.text()));
+  if (!oauth1.oauth_token) throw new Error("OAuth1 token missing in response");
 
-  await storeToken(token);
+  // 5. Exchange OAuth1 token for OAuth2 access/refresh tokens.
+  const o2 = await exchangeOAuth2(cc, oauth1.oauth_token, oauth1.oauth_token_secret);
 
-  return { success: true, expiresIn: diData.expires_in };
+  await storeToken({
+    access_token: o2.access_token,
+    refresh_token: o2.refresh_token,
+    expires_at: Date.now() + o2.expires_in * 1000,
+    oauth1_token: oauth1.oauth_token,
+    oauth1_secret: oauth1.oauth_token_secret,
+  });
+  return { connected: true };
 }
 
 // ── Garmin API calls ────────────────────────────────────────────
 
 async function garminGet(path: string, token: string) {
-  const res = await fetch(`${CONNECT_BASE}/${path}`, {
+  const res = await fetchRetry(`${CONNECT_BASE}/${path}`, {
     headers: {
       Authorization: `Bearer ${token}`,
       "User-Agent": "GCM-Android-5.23",
@@ -361,15 +469,13 @@ serve(async (req) => {
   try {
     const url = new URL(req.url);
     const path = url.pathname.split("/").pop();
+
     const body = req.method === "POST" ? await req.json() : {};
 
     let result;
     switch (path) {
       case "login":
         result = await handleLogin(body.email, body.password);
-        break;
-      case "exchange-ticket":
-        result = await handleExchangeTicket(body.ticket, body.service_url);
         break;
       case "sync":
         result = await handleSync(body.date);

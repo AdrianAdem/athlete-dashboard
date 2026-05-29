@@ -1,9 +1,9 @@
-// Garmin Connect service — browser-based SSO login + edge function for API calls
+// Garmin Connect service — reads health data stored by the local sync script.
+// Login + fetch happen in scripts/garmin-sync.mjs (Garmin blocks datacenter IPs,
+// so it must run from a residential connection, not a Supabase edge function).
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const GARMIN_API = `${SUPABASE_URL}/functions/v1/garmin-sync`;
-
-// No SSO popup needed — direct credential login via DI OAuth2
 
 async function garminFetch(endpoint: string, body: Record<string, unknown> = {}) {
   const res = await fetch(`${GARMIN_API}/${endpoint}`, {
@@ -16,30 +16,6 @@ async function garminFetch(endpoint: string, body: Record<string, unknown> = {})
     throw new Error(err.error ?? `Garmin API error: ${res.status}`);
   }
   return res.json();
-}
-
-export async function getGarminStatus(): Promise<{
-  connected: boolean;
-  expires_at: number | null;
-  expired: boolean;
-}> {
-  return garminFetch("status");
-}
-
-/**
- * Direct credential login via edge function.
- * Edge function uses DI OAuth2 password grant — no SSO popup needed.
- */
-export async function loginGarmin(email: string, password: string): Promise<{ success: boolean; expiresIn: number }> {
-  return garminFetch("login", { email, password });
-}
-
-export async function syncGarminHealth(date?: string): Promise<Record<string, unknown>> {
-  return garminFetch("sync", date ? { date } : {});
-}
-
-export async function bulkSyncGarmin(days = 7): Promise<{ synced: number; results: unknown[] }> {
-  return garminFetch("bulk-sync", { days });
 }
 
 // Typed health data matching edge function output
