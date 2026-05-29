@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { USER_ID } from "@/lib/constants";
 import { todayString, isRoutineActiveToday } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
+import { SwipeRow } from "@/components/ui/swipe-row";
 import type { SportTodo, DailyTodo, Routine, RoutineItem, RoutineLog, TodoPriority, RoutineCategory } from "@/types/database";
 
 const categoryColors: Record<RoutineCategory, string> = {
@@ -178,6 +179,15 @@ export function SportTodosPage() {
     await supabase.from("routines").update({ is_active: false }).eq("id", id);
   };
 
+  const deleteRoutineItem = async (routineId: string, itemId: string) => {
+    setRoutines((prev) =>
+      prev.map((r) =>
+        r.id === routineId ? { ...r, items: r.items.filter((i) => i.id !== itemId) } : r
+      )
+    );
+    await supabase.from("routine_items").delete().eq("id", itemId);
+  };
+
   // ── Todo handlers ──
 
   const toggleTodo = async (todo: UnifiedTodo) => {
@@ -251,7 +261,8 @@ export function SportTodosPage() {
             const allDone = routine.log?.completed ?? false;
 
             return (
-              <div key={routine.id} className={`rounded-xl bg-card overflow-hidden transition-opacity ${allDone ? "opacity-60" : ""}`}>
+              <SwipeRow key={routine.id} onDelete={() => deleteRoutine(routine.id)}
+                className={`transition-opacity ${allDone ? "opacity-60" : ""}`}>
                 {/* Routine header */}
                 <button
                   onClick={() => setExpandedRoutine(isExpanded ? null : routine.id)}
@@ -283,35 +294,37 @@ export function SportTodosPage() {
                     {routine.items.map((item) => {
                       const isDone = completed.includes(item.id);
                       return (
-                        <div key={item.id} className="flex items-center gap-3">
-                          <button
-                            onClick={() => toggleRoutineItem(routine, item.id)}
-                            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md border-2 transition-all ${
-                              isDone ? "border-green-500 bg-green-500" : "border-neutral-600"
-                            }`}
-                          >
-                            {isDone && <Check className="h-3.5 w-3.5 text-black" />}
-                          </button>
-                          <div className="flex-1">
-                            <p className={`text-sm ${isDone ? "line-through text-neutral-600" : ""}`}>{item.name}</p>
-                            {(item.sets || item.reps || item.duration_sec) && (
-                              <p className="text-xs text-neutral-600">
-                                {item.sets && item.reps ? `${item.sets}×${item.reps}` : ""}
-                                {item.duration_sec ? `${item.duration_sec}s` : ""}
-                                {item.notes ? ` · ${item.notes}` : ""}
-                              </p>
-                            )}
+                        <SwipeRow key={item.id} rounded="rounded-lg"
+                          onDelete={() => deleteRoutineItem(routine.id, item.id)}>
+                          <div className="flex items-center gap-3 py-1">
+                            <button
+                              onClick={() => toggleRoutineItem(routine, item.id)}
+                              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md border-2 transition-all ${
+                                isDone ? "border-green-500 bg-green-500" : "border-neutral-600"
+                              }`}
+                            >
+                              {isDone && <Check className="h-3.5 w-3.5 text-black" />}
+                            </button>
+                            <div className="flex-1">
+                              <p className={`text-sm ${isDone ? "line-through text-neutral-600" : ""}`}>{item.name}</p>
+                              {(item.sets || item.reps || item.duration_sec) && (
+                                <p className="text-xs text-neutral-600">
+                                  {item.sets && item.reps ? `${item.sets}×${item.reps}` : ""}
+                                  {item.duration_sec ? `${item.duration_sec}s` : ""}
+                                  {item.notes ? ` · ${item.notes}` : ""}
+                                </p>
+                              )}
+                            </div>
                           </div>
-                        </div>
+                        </SwipeRow>
                       );
                     })}
-                    <button onClick={() => deleteRoutine(routine.id)}
-                      className="mt-2 flex items-center gap-1 text-xs text-neutral-600 hover:text-red-500">
-                      <Trash2 className="h-3 w-3" /> Routine entfernen
-                    </button>
+                    <p className="pt-1 text-center text-[10px] text-neutral-600">
+                      Nach links wischen zum Löschen
+                    </p>
                   </div>
                 )}
-              </div>
+              </SwipeRow>
             );
           })}
 
