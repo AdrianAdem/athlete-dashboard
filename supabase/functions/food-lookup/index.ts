@@ -59,6 +59,15 @@ function parseServing(s: any) {
     carbs: parseFloat(s.carbohydrate ?? "0"),
     fat: parseFloat(s.fat ?? "0"),
     fiber: parseFloat(s.fiber ?? "0"),
+    // Micronutrients FatSecret actually provides (food.get.v4). The rest
+    // (B12/E/K/magnesium/zinc/omega3) aren't in the dataset.
+    vitaminA: parseFloat(s.vitamin_a ?? "0"), // mcg
+    vitaminC: parseFloat(s.vitamin_c ?? "0"), // mg
+    vitaminD: parseFloat(s.vitamin_d ?? "0"), // mcg
+    calcium: parseFloat(s.calcium ?? "0"), // mg
+    iron: parseFloat(s.iron ?? "0"), // mg
+    potassium: parseFloat(s.potassium ?? "0"), // mg
+    sodium: parseFloat(s.sodium ?? "0"), // mg
   };
 }
 

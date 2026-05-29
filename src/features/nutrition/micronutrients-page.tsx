@@ -18,18 +18,18 @@ interface MicroField {
 
 const microFields: MicroField[] = [
   { key: "fiber_g", label: "Ballaststoffe", unit: "g", rda: 30, color: "#a3e635", sourceField: "fiber_g" },
-  { key: "vitamin_c_mg", label: "Vitamin C", unit: "mg", rda: 90, color: "#fb923c" },
-  { key: "vitamin_d_mcg", label: "Vitamin D", unit: "µg", rda: 20, color: "#facc15" },
+  { key: "vitamin_c_mg", label: "Vitamin C", unit: "mg", rda: 90, color: "#fb923c", sourceField: "vitamin_c_mg" },
+  { key: "vitamin_d_mcg", label: "Vitamin D", unit: "µg", rda: 20, color: "#facc15", sourceField: "vitamin_d_mcg" },
   { key: "vitamin_b12_mcg", label: "Vitamin B12", unit: "µg", rda: 2.4, color: "#f87171" },
-  { key: "vitamin_a_mcg", label: "Vitamin A", unit: "µg", rda: 900, color: "#c084fc" },
+  { key: "vitamin_a_mcg", label: "Vitamin A", unit: "µg", rda: 900, color: "#c084fc", sourceField: "vitamin_a_mcg" },
   { key: "vitamin_e_mg", label: "Vitamin E", unit: "mg", rda: 15, color: "#34d399" },
   { key: "vitamin_k_mcg", label: "Vitamin K", unit: "µg", rda: 120, color: "#4ade80" },
-  { key: "iron_mg", label: "Eisen", unit: "mg", rda: 8, color: "#ef4444" },
-  { key: "calcium_mg", label: "Kalzium", unit: "mg", rda: 1000, color: "#e2e8f0" },
+  { key: "iron_mg", label: "Eisen", unit: "mg", rda: 8, color: "#ef4444", sourceField: "iron_mg" },
+  { key: "calcium_mg", label: "Kalzium", unit: "mg", rda: 1000, color: "#e2e8f0", sourceField: "calcium_mg" },
   { key: "magnesium_mg", label: "Magnesium", unit: "mg", rda: 400, color: "#06b6d4" },
   { key: "zinc_mg", label: "Zink", unit: "mg", rda: 11, color: "#a78bfa" },
-  { key: "potassium_mg", label: "Kalium", unit: "mg", rda: 2600, color: "#f97316" },
-  { key: "sodium_mg", label: "Natrium", unit: "mg", rda: 2300, color: "#94a3b8" },
+  { key: "potassium_mg", label: "Kalium", unit: "mg", rda: 2600, color: "#f97316", sourceField: "potassium_mg" },
+  { key: "sodium_mg", label: "Natrium", unit: "mg", rda: 2300, color: "#94a3b8", sourceField: "sodium_mg" },
   { key: "omega3_mg", label: "Omega-3", unit: "mg", rda: 1600, color: "#38bdf8" },
 ];
 

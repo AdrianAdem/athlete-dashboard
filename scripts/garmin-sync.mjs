@@ -132,13 +132,17 @@ async function getAccessToken() {
   const now = Date.now();
   const cached = loadTokens();
   // Valid, unexpired access token — reuse as-is.
-  if (cached?.access_token && cached.expires_at > now + 60_000) return cached.access_token;
+  if (cached?.access_token && cached.expires_at > now + 60_000) {
+    console.log("Token aus Cache (kein Login).");
+    return cached.access_token;
+  }
 
   const cc = await getConsumerCredentials();
 
   // Have OAuth1 creds — refresh without a full SSO login.
   if (cached?.oauth1_token && cached?.oauth1_secret) {
     try {
+      console.log("Token-Refresh (OAuth1, kein SSO)...");
       const o2 = await exchangeOAuth2(cc, cached.oauth1_token, cached.oauth1_secret);
       saveTokens({
         access_token: o2.access_token,
@@ -152,6 +156,7 @@ async function getAccessToken() {
     }
   }
 
+  console.log("Voller SSO-Login...");
   const { oauth1, o2 } = await fullLogin(cc);
   saveTokens({
     access_token: o2.access_token,
@@ -313,7 +318,6 @@ async function main() {
   requireEnv();
   const days = Math.max(1, Math.min(31, parseInt(process.argv[2] ?? "7", 10) || 7));
 
-  console.log("Garmin Login...");
   const token = await getAccessToken();
   const displayName = await getDisplayName(token);
   console.log("Verbunden. Sync " + days + " Tage...");

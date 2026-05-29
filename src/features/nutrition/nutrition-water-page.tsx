@@ -23,6 +23,12 @@ type TabType = MealType | "water";
 type QuantityUnit = "g" | "ml" | "stück";
 type AddMode = "search" | "barcode" | "ai" | null;
 
+// Micronutrients FatSecret provides, keyed to the nutrition_log columns.
+const ZERO_MICROS = {
+  vitamin_a_mcg: 0, vitamin_c_mg: 0, vitamin_d_mcg: 0,
+  calcium_mg: 0, iron_mg: 0, potassium_mg: 0, sodium_mg: 0,
+};
+
 const mealConfig: { type: MealType; label: string; icon: typeof Sunrise; pct: number }[] = [
   { type: "frühstück", label: "Frühstück", icon: Sunrise, pct: 0.25 },
   { type: "mittagessen", label: "Mittag", icon: Sun, pct: 0.35 },
@@ -179,6 +185,9 @@ export function NutritionWaterPage() {
   const [baseProt, setBaseProt] = useState(0);
   const [baseCarbs, setBaseCarbs] = useState(0);
   const [baseFat, setBaseFat] = useState(0);
+  const [baseFiber, setBaseFiber] = useState(0);
+  // Micronutrients per 100g (only those FatSecret provides; 0 for manual/AI entries).
+  const [baseMicros, setBaseMicros] = useState(ZERO_MICROS);
   const [barcode, setBarcode] = useState<string | null>(null);
   const [foodSource, setFoodSource] = useState<"barcode" | "search" | "ai" | "custom">("search");
 
@@ -187,6 +196,12 @@ export function NutritionWaterPage() {
   const liveProt = Math.round(baseProt * factor * 10) / 10;
   const liveCarbs = Math.round(baseCarbs * factor * 10) / 10;
   const liveFat = Math.round(baseFat * factor * 10) / 10;
+  const liveFiber = Math.round(baseFiber * factor * 10) / 10;
+  // Scale each micro by quantity, rounded to 1 decimal.
+  const scaleMicros = () =>
+    Object.fromEntries(
+      Object.entries(baseMicros).map(([k, v]) => [k, Math.round(v * factor * 10) / 10]),
+    ) as typeof ZERO_MICROS;
 
   // Goals
   const [calorieGoal, setCalorieGoal] = useState(2500);
@@ -258,6 +273,7 @@ export function NutritionWaterPage() {
         setBaseProt(data.protein_100);
         setBaseCarbs(data.carbs_100);
         setBaseFat(data.fat_100);
+        setBaseFiber(0); setBaseMicros(ZERO_MICROS);
         setFoodSource("custom");
         setQuantityUnit(guessUnit(data.name));
         setQuantity(100);
@@ -292,6 +308,14 @@ export function NutritionWaterPage() {
       setBaseProt(Math.round(serving.protein * normFactor * 10) / 10);
       setBaseCarbs(Math.round(serving.carbs * normFactor * 10) / 10);
       setBaseFat(Math.round(serving.fat * normFactor * 10) / 10);
+      setBaseFiber(Math.round(serving.fiber * normFactor * 10) / 10);
+      const r1 = (n: number) => Math.round(n * normFactor * 10) / 10;
+      setBaseMicros({
+        vitamin_a_mcg: r1(serving.vitaminA), vitamin_c_mg: r1(serving.vitaminC),
+        vitamin_d_mcg: r1(serving.vitaminD), calcium_mg: r1(serving.calcium),
+        iron_mg: r1(serving.iron), potassium_mg: r1(serving.potassium),
+        sodium_mg: r1(serving.sodium),
+      });
       setQuantityUnit(serving.metricUnit === "ml" ? "ml" : "g");
       setQuantity(Math.round(metricAmount));
     }
@@ -327,6 +351,7 @@ export function NutritionWaterPage() {
     setBaseProt(Math.round((item.protein_g / item.amount_g) * 100 * 10) / 10);
     setBaseCarbs(Math.round((item.carbs_g / item.amount_g) * 100 * 10) / 10);
     setBaseFat(Math.round((item.fat_g / item.amount_g) * 100 * 10) / 10);
+    setBaseFiber(0); setBaseMicros(ZERO_MICROS);
     setQuantity(item.amount_g);
     setQuantityUnit("g");
     setFoodSource("ai");
@@ -341,6 +366,7 @@ export function NutritionWaterPage() {
     setBaseProt(recent.protein_100);
     setBaseCarbs(recent.carbs_100);
     setBaseFat(recent.fat_100);
+    setBaseFiber(0); setBaseMicros(ZERO_MICROS);
     setFoodSource(recent.source);
     setQuantityUnit("g");
     setQuantity(100);
@@ -355,7 +381,7 @@ export function NutritionWaterPage() {
         user_id: USER_ID, date: selectedDate, meal_type: activeTab as MealType,
         food_name: foodName.trim(), barcode,
         calories: liveCal, protein_g: liveProt, carbs_g: liveCarbs, fat_g: liveFat,
-        fiber_g: 0, quantity_g: quantity,
+        fiber_g: liveFiber, quantity_g: quantity, ...scaleMicros(),
       })
       .select().single();
     if (data) {
@@ -381,6 +407,7 @@ export function NutritionWaterPage() {
 
   const resetForm = () => {
     setFoodName(""); setBarcode(null); setBaseCal(0); setBaseProt(0); setBaseCarbs(0); setBaseFat(0);
+    setBaseFiber(0); setBaseMicros(ZERO_MICROS);
     setQuantity(100); setQuantityUnit("g"); setShowAddForm(false); setAddMode(null);
     setSearchQuery(""); setSearchResults([]); setAiResults([]); setFoodSource("search");
   };

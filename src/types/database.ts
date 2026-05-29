@@ -89,6 +89,14 @@ export interface NutritionLog {
   fat_g: number;
   fiber_g: number;
   quantity_g: number;
+  // Micronutrients (only those FatSecret provides; null/0 for manual entries).
+  vitamin_a_mcg?: number | null;
+  vitamin_c_mg?: number | null;
+  vitamin_d_mcg?: number | null;
+  calcium_mg?: number | null;
+  iron_mg?: number | null;
+  potassium_mg?: number | null;
+  sodium_mg?: number | null;
   created_at: string;
 }
 

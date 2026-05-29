@@ -16,6 +16,13 @@ export interface FatSecretServing {
   carbs: number;
   fat: number;
   fiber: number;
+  vitaminA: number; // mcg
+  vitaminC: number; // mg
+  vitaminD: number; // mcg
+  calcium: number; // mg
+  iron: number; // mg
+  potassium: number; // mg
+  sodium: number; // mg
 }
 
 export interface FatSecretFood {
