@@ -87,7 +87,10 @@ export function SwipeRow({
         <Trash2 className="h-5 w-5 shrink-0" />
       </button>
       <div
-        className={cn("relative", surface)}
+        // overflow-hidden establishes a BFC so children's bottom margins (e.g. a
+        // routine's progress bar) stay inside the card instead of collapsing out
+        // and clipping against the rounded bottom edge.
+        className={cn("relative overflow-hidden", surface)}
         style={{
           transform: `translateX(${dx}px)`,
           transition: dragging ? "none" : "transform 0.2s ease-out",
