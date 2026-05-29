@@ -29,3 +29,8 @@ dist-ssr
 .env.production
 logs/
 scripts/.garmin-tokens.json
+
+# Local-only / never commit
+.claude/
+PRODUCT.md
+supabase/.temp/
