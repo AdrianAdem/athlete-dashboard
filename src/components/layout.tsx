@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   Home,
@@ -19,6 +20,19 @@ const tabs = [
 export function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+
+  // iOS Safari: position:fixed elements detach from the bottom while the
+  // on-screen keyboard shrinks the visual viewport and often stay stuck
+  // mid-screen after it closes. Hide the nav while the keyboard is up;
+  // the mount/unmount also forces a repaint that un-sticks it.
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const onResize = () => setKeyboardOpen(window.innerHeight - vv.height > 150);
+    vv.addEventListener("resize", onResize);
+    return () => vv.removeEventListener("resize", onResize);
+  }, []);
 
   const activeTab = (() => {
     for (const tab of tabs) {
@@ -34,7 +48,10 @@ export function Layout() {
         <Outlet />
       </main>
 
-      <nav className="fixed inset-x-0 bottom-0 z-50 bg-background/95 backdrop-blur pb-[env(safe-area-inset-bottom,8px)]">
+      <nav className={cn(
+        "fixed inset-x-0 bottom-0 z-50 bg-background/95 backdrop-blur pb-[env(safe-area-inset-bottom,8px)]",
+        keyboardOpen && "hidden"
+      )}>
         <div className="flex h-14 items-end justify-around pb-1">
           {tabs.map((tab) => {
             const Icon = tab.icon;
