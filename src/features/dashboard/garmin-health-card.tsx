@@ -24,7 +24,12 @@ export function GarminHealthCard() {
         // that actually has daily metrics (today is often still incomplete).
         const entries = await getGarminData(dateStr(7), dateStr(0));
         const sorted = entries.sort((a, b) => b.date.localeCompare(a.date));
-        const latest = sorted.find((e) => e.data?.daily) ?? sorted[0];
+        // "daily" can exist with all-null values on a day the watch hasn't
+        // synced yet — require an actual measurement.
+        const latest = sorted.find((e) => {
+          const daily = e.data?.daily;
+          return daily && (daily.steps != null || daily.resting_hr != null);
+        }) ?? sorted[0];
         if (latest) setHealth(latest.data);
       } catch {
         // No data yet or fetch failed
