@@ -56,7 +56,7 @@ function requireEnv() {
   if (!SERVICE_ROLE) missing.push("SUPABASE_SERVICE_ROLE_KEY");
   if (missing.length) {
     console.error(`Fehlende Env-Variablen: ${missing.join(", ")}`);
-    console.error("Trage sie in life-manager/.env ein (siehe .env.example).");
+    console.error("Trage sie in athlete-dashboard/.env ein (siehe .env.example).");
     process.exit(1);
   }
 }

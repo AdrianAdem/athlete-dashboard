@@ -64,7 +64,7 @@ function Loading() {
 
 export default function App() {
   return (
-    <BrowserRouter basename="/life-manager">
+    <BrowserRouter basename="/athlete-dashboard">
       <WorkoutProvider>
         <Suspense fallback={<Loading />}>
           <Routes>

@@ -50,7 +50,7 @@ async function handleCallback(url: URL): Promise<Response> {
   const error = url.searchParams.get("error");
 
   if (error) {
-    const appUrl = Deno.env.get("APP_URL") ?? "https://adrianadem.github.io/life-manager";
+    const appUrl = Deno.env.get("APP_URL") ?? "https://adrianadem.github.io/athlete-dashboard";
     return Response.redirect(`${appUrl}/einstellungen?strava=error&reason=${error}`, 302);
   }
 
@@ -78,7 +78,7 @@ async function handleCallback(url: URL): Promise<Response> {
   if (!tokenRes.ok) {
     const err = await tokenRes.text();
     console.error("Strava token exchange failed:", err);
-    const appUrl = Deno.env.get("APP_URL") ?? "https://adrianadem.github.io/life-manager";
+    const appUrl = Deno.env.get("APP_URL") ?? "https://adrianadem.github.io/athlete-dashboard";
     return Response.redirect(
       `${appUrl}/einstellungen?strava=error&reason=token_exchange_failed`,
       302,
@@ -107,7 +107,7 @@ async function handleCallback(url: URL): Promise<Response> {
     console.error("DB upsert error:", dbError);
   }
 
-  const appUrl = Deno.env.get("APP_URL") ?? "https://adrianadem.github.io/life-manager";
+  const appUrl = Deno.env.get("APP_URL") ?? "https://adrianadem.github.io/athlete-dashboard";
   return Response.redirect(`${appUrl}/einstellungen?strava=connected`, 302);
 }
 

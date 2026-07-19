@@ -7,9 +7,9 @@
   the absolute path to this repository, then install it:
 
     sed -e "s|__NODE_BIN__|$(which node)|" -e "s|__PROJECT_DIR__|$PWD|" \
-      scripts/com.life-manager.garmin-sync.plist \
-      > ~/Library/LaunchAgents/com.life-manager.garmin-sync.plist
-    launchctl load ~/Library/LaunchAgents/com.life-manager.garmin-sync.plist
+      scripts/com.athlete-dashboard.garmin-sync.plist \
+      > ~/Library/LaunchAgents/com.athlete-dashboard.garmin-sync.plist
+    launchctl load ~/Library/LaunchAgents/com.athlete-dashboard.garmin-sync.plist
 
   Note: launchd resolves these paths at load time. If the repository moves, the
   job fails with MODULE_NOT_FOUND until it is regenerated and reloaded.
@@ -17,7 +17,7 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.life-manager.garmin-sync</string>
+    <string>com.athlete-dashboard.garmin-sync</string>
 
     <key>ProgramArguments</key>
     <array>

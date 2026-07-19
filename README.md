@@ -1,8 +1,8 @@
-# Life Manager
+# Athlete Dashboard
 
 A self-hosted health and training tracker that unifies strength training, cardio, nutrition, and wearable biometrics in one mobile web app.
 
-Fitness data is fragmented across vendor silos: strength logs in one app, runs in Strava, sleep and HRV locked inside Garmin Connect, nutrition somewhere else. None of them answer a question like "did my HRV drop in the weeks my training volume spiked?" Life Manager pulls all of it into a single Postgres database behind a single UI, so the data can actually be correlated. It ships as an installable mobile web app deployed as a static bundle, with no backend server to maintain.
+Fitness data is fragmented across vendor silos: strength logs in one app, runs in Strava, sleep and HRV locked inside Garmin Connect, nutrition somewhere else. None of them answer a question like "did my HRV drop in the weeks my training volume spiked?" Athlete Dashboard pulls all of it into a single Postgres database behind a single UI, so the data can actually be correlated. It ships as an installable mobile web app deployed as a static bundle, with no backend server to maintain.
 
 ## Features
 
@@ -90,10 +90,10 @@ Demo mode runs the whole app against in-memory fixtures — no Supabase project,
 no API keys, no `.env`:
 
 ```bash
-git clone https://github.com/AdrianAdem/life-manager.git
-cd life-manager
+git clone https://github.com/AdrianAdem/athlete-dashboard.git
+cd athlete-dashboard
 npm install
-npm run demo           # http://localhost:5173/life-manager/
+npm run demo           # http://localhost:5173/athlete-dashboard/
 ```
 
 It ships twelve weeks of training logs, a week of meals, five runs with GPS
@@ -152,9 +152,9 @@ agent from the template (it substitutes your Node path and repo location):
 
 ```bash
 sed -e "s|__NODE_BIN__|$(which node)|" -e "s|__PROJECT_DIR__|$PWD|" \
-  scripts/com.life-manager.garmin-sync.plist \
-  > ~/Library/LaunchAgents/com.life-manager.garmin-sync.plist
-launchctl load ~/Library/LaunchAgents/com.life-manager.garmin-sync.plist
+  scripts/com.athlete-dashboard.garmin-sync.plist \
+  > ~/Library/LaunchAgents/com.athlete-dashboard.garmin-sync.plist
+launchctl load ~/Library/LaunchAgents/com.athlete-dashboard.garmin-sync.plist
 ```
 
 Edge functions deploy with the Supabase CLI:

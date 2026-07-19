@@ -6,7 +6,7 @@ import path from "path";
 const isDemo = process.env.VITE_DEMO === "1";
 
 export default defineConfig({
-  base: "/life-manager/",
+  base: "/athlete-dashboard/",
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: [
