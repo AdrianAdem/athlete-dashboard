@@ -25,10 +25,23 @@ dist-ssr
 
 # Environment
 .env
-.env.local
+.env*.local
 .env.production
-logs/
 scripts/.garmin-tokens.json
+
+# Python (helper scripts / notebooks)
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Test output
+coverage/
 
 # Local-only / never commit
 .claude/
