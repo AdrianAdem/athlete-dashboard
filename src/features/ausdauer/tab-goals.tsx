@@ -34,7 +34,7 @@ function computeStreak(activities: CardioActivity[], weeklyTarget: number): numb
 
   const now = new Date();
   let streak = 0;
-  let checkDate = new Date(now);
+  const checkDate = new Date(now);
 
   // Start from last week (current week is ongoing)
   checkDate.setDate(checkDate.getDate() - 7);

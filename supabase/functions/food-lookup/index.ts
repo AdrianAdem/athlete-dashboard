@@ -48,7 +48,11 @@ async function fatSecretAPI(method: string, params: Record<string, string> = {})
   return data;
 }
 
-function parseServing(s: any) {
+// FatSecret returns every numeric field as a string, and omits fields a food
+// has no data for.
+type FatSecretServing = Record<string, string | undefined>;
+
+function parseServing(s: FatSecretServing) {
   return {
     id: s.serving_id,
     description: s.serving_description ?? "",
@@ -94,7 +98,7 @@ async function handleSearch(query: string, page = 0) {
   if (!foods) return { results: [], totalResults: 0 };
   const arr = Array.isArray(foods) ? foods : [foods];
   return {
-    results: arr.map((f: any) => ({
+    results: arr.map((f: Record<string, string | undefined>) => ({
       id: f.food_id,
       name: f.food_name,
       brand: f.brand_name ?? null,

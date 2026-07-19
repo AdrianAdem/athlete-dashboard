@@ -9,6 +9,8 @@ import { calculateMacros } from "@/lib/macro-calc";
 import { searchFoods, getFoodDetails, lookupBarcode, parseWithAI, addRecentFood, getRecentFoods } from "@/lib/food-service";
 import type { FoodSearchResult, FatSecretFood, AIFoodItem, RecentFood } from "@/lib/food-service";
 import type { NutritionLog, MealType, WaterLog } from "@/types/database";
+// Type-only: erased at compile time, so the library stays dynamically imported.
+import type { Html5Qrcode } from "html5-qrcode";
 
 function guessUnit(name: string): QuantityUnit {
   const lower = name.toLowerCase();
@@ -59,7 +61,7 @@ function RingProgress({ value, max, size = 64, strokeWidth = 5, color, children 
 // Barcode Scanner Component
 function BarcodeScanner({ onScan, onClose }: { onScan: (code: string) => void; onClose: () => void }) {
   const scannerRef = useRef<HTMLDivElement>(null);
-  const scannerInstance = useRef<any>(null);
+  const scannerInstance = useRef<Html5Qrcode | null>(null);
 
   useEffect(() => {
     let mounted = true;
