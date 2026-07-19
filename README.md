@@ -76,9 +76,9 @@ Two design decisions worth calling out:
 
 ## Screenshots
 
-| Dashboard | Training | Nutrition | Analytics |
+| Dashboard | Routines | Micronutrients | Analytics |
 | --- | --- | --- | --- |
-| _`docs/screenshots/dashboard.png`_ | _`docs/screenshots/training.png`_ | _`docs/screenshots/nutrition.png`_ | _`docs/screenshots/stats.png`_ |
+| <img src="docs/screenshots/dashboard.png" width="200" alt="Daily overview with calorie, water, training and weight tiles above the routine list"> | <img src="docs/screenshots/training.png" width="200" alt="Routine list with per-step completion progress"> | <img src="docs/screenshots/nutrition.png" width="200" alt="Micronutrient intake against recommended daily allowances"> | <img src="docs/screenshots/stats.png" width="200" alt="Training scores, volume chart and per-exercise 1RM trend"> |
 
 ## Setup
 
