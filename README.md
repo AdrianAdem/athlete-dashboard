@@ -5,12 +5,10 @@
 ### Strength, cardio, nutrition and wearable biometrics behind a single Postgres schema, so the data can finally be correlated.
 
 <p>
-<img src="https://img.shields.io/badge/license-MIT-0A0C0B?style=for-the-badge" alt="" height="30"/>
-<img src="https://img.shields.io/badge/react-19-0A0C0B?style=for-the-badge&logo=react&logoColor=61DAFB" alt="" height="30"/>
-<img src="https://img.shields.io/badge/supabase-postgres%20%2B%20RLS-0A0C0B?style=for-the-badge&logo=supabase&logoColor=3FCF8E" alt="" height="30"/>
-<img src="https://img.shields.io/badge/tables-22-B8F04A?style=for-the-badge" alt="" height="30"/>
-<img src="https://img.shields.io/badge/live%20demo-no%20account%20needed-B8F04A?style=for-the-badge" alt="" height="30"/>
+<img src="https://img.shields.io/badge/license-MIT-B8F04A?style=for-the-badge&labelColor=131614" alt=""/> <img src="https://img.shields.io/badge/react-19-61DAFB?style=for-the-badge&logo=react&logoColor=white&labelColor=131614" alt=""/> <img src="https://img.shields.io/badge/supabase-postgres%20%2B%20RLS-3FCF8E?style=for-the-badge&logo=supabase&logoColor=white&labelColor=131614" alt=""/> <img src="https://img.shields.io/badge/tables-22-B8F04A?style=for-the-badge&labelColor=131614" alt=""/> <img src="https://img.shields.io/badge/live%20demo-no%20account-B8F04A?style=for-the-badge&labelColor=131614" alt=""/>
 </p>
+
+<br>
 
 </div>
 
