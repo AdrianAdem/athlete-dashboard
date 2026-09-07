@@ -32,10 +32,8 @@ jobs:
       - name: Build
         run: npm run build
         env:
-          # The public Pages build runs against the in-memory demo client, so a
-          # visitor gets seeded data instead of a permanent loading screen, and
-          # no project credentials are shipped in the public bundle.
-          VITE_DEMO: "1"
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
 
       - name: SPA fallback
         run: cp dist/index.html dist/404.html

@@ -5,7 +5,7 @@
 ### Strength, cardio, nutrition and wearable biometrics behind a single Postgres schema, so the data can finally be correlated.
 
 <p>
-<img src="https://img.shields.io/badge/license-MIT-B8F04A?style=for-the-badge&labelColor=131614" alt=""/> <img src="https://img.shields.io/badge/react-19-61DAFB?style=for-the-badge&logo=react&logoColor=white&labelColor=131614" alt=""/> <img src="https://img.shields.io/badge/supabase-postgres%20%2B%20RLS-3FCF8E?style=for-the-badge&logo=supabase&logoColor=white&labelColor=131614" alt=""/> <img src="https://img.shields.io/badge/tables-22-B8F04A?style=for-the-badge&labelColor=131614" alt=""/> <img src="https://img.shields.io/badge/live%20demo-no%20account-B8F04A?style=for-the-badge&labelColor=131614" alt=""/>
+<img src="https://img.shields.io/badge/license-MIT-B8F04A?style=for-the-badge&labelColor=131614" alt=""/> <img src="https://img.shields.io/badge/react-19-61DAFB?style=for-the-badge&logo=react&logoColor=white&labelColor=131614" alt=""/> <img src="https://img.shields.io/badge/supabase-postgres%20%2B%20RLS-3FCF8E?style=for-the-badge&logo=supabase&logoColor=white&labelColor=131614" alt=""/> <img src="https://img.shields.io/badge/tables-22-B8F04A?style=for-the-badge&labelColor=131614" alt=""/> <img src="https://img.shields.io/badge/demo%20mode-npm%20run%20demo-B8F04A?style=for-the-badge&labelColor=131614" alt=""/>
 </p>
 
 <br>
@@ -14,7 +14,7 @@
 
 **Contents** &nbsp;·&nbsp; [Features](#features) &nbsp;·&nbsp; [Screenshots](#screenshots) &nbsp;·&nbsp; [Tech Stack](#tech-stack) &nbsp;·&nbsp; [Architecture](#architecture) &nbsp;·&nbsp; [Setup](#setup) &nbsp;·&nbsp; [Usage](#usage) &nbsp;·&nbsp; [Project Structure](#project-structure) &nbsp;·&nbsp; [Notes](#notes) &nbsp;·&nbsp; [License](#license)
 
-**[Open the live demo →](https://adrianadem.github.io/athlete-dashboard/)** It runs entirely in the browser against seeded fixtures: no account, no backend, and the numbers are generated rather than mine.
+The deployed build at `adrianadem.github.io/athlete-dashboard` is my own running instance and needs my Supabase session, so it is not a public demo. To see the app without a backend, run demo mode locally — it ships with fixtures and needs no account: [Try it without a backend](#try-it-without-a-backend).
 
 Fitness data is fragmented across vendor silos: strength logs in one app, runs in Strava, sleep and HRV locked inside Garmin Connect, nutrition somewhere else. None of them answer a question like "did my HRV drop in the weeks my training volume spiked?" Athlete Dashboard pulls all of it into a single Postgres database behind a single UI, so the data can actually be correlated. It ships as an installable mobile web app deployed as a static bundle, with no backend server to maintain.
 
