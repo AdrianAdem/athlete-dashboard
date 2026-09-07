@@ -2,6 +2,9 @@
 
 <p><img src="https://img.shields.io/badge/license-MIT-0A0C0B?style=flat-square" alt="" height="20"/> <img src="https://img.shields.io/badge/react-19-0A0C0B?style=flat-square" alt="" height="20"/> <img src="https://img.shields.io/badge/supabase-postgres%20%2B%20RLS-0A0C0B?style=flat-square" alt="" height="20"/> <img src="https://img.shields.io/badge/tables-22-B8F04A?style=flat-square" alt="" height="20"/></p>
 
+**Contents** &nbsp;·&nbsp; [Features](#features) &nbsp;·&nbsp; [Screenshots](#screenshots) &nbsp;·&nbsp; [Tech Stack](#tech-stack) &nbsp;·&nbsp; [Architecture](#architecture) &nbsp;·&nbsp; [Setup](#setup) &nbsp;·&nbsp; [Usage](#usage) &nbsp;·&nbsp; [Project Structure](#project-structure) &nbsp;·&nbsp; [Notes](#notes) &nbsp;·&nbsp; [License](#license)
+
+
 **[Open the live demo →](https://adrianadem.github.io/athlete-dashboard/)** It runs entirely in the browser against seeded fixtures: no account, no backend, and the numbers are generated rather than mine.
 
 A self-hosted health and training tracker that unifies strength training, cardio, nutrition, and wearable biometrics in one mobile web app.
@@ -17,6 +20,14 @@ Fitness data is fragmented across vendor silos: strength logs in one app, runs i
 - **Nutrition** — barcode scanning, FatSecret database search, LLM-parsed freetext entry, macro and micronutrient tracking against RDA targets, water logging
 - **Wearable biometrics** — daily Garmin sync of resting heart rate, HRV, sleep stages and score, Body Battery, stress, VO2max, and steps
 - **Dashboard** — daily overview of calories, water, training status, routines, and the latest biometrics
+
+## Screenshots
+
+| Dashboard | Training analytics | Cardio | Micronutrients |
+| --- | --- | --- | --- |
+| <img src="docs/screenshots/dashboard.png" width="200" alt="Daily overview with calorie, water, training and weight tiles above the routine list"> | <img src="docs/screenshots/stats.png" width="200" alt="Training scores, weekly volume chart and per-exercise 1RM trend"> | <img src="docs/screenshots/cardio.png" width="200" alt="Activity feed with a GPS route map and pace, time and elevation stats"> | <img src="docs/screenshots/nutrition.png" width="200" alt="Micronutrient intake against recommended daily allowances"> |
+
+Taken from demo mode, so the data shown is generated, not personal.
 
 ## Tech Stack
 
@@ -77,14 +88,6 @@ Two design decisions worth calling out:
 **Garmin sync runs locally, not in an edge function.** Garmin's `connectapi.garmin.com` gateway hard-blocks datacenter IP ranges — every request from Supabase's infrastructure returns `429`. The sync therefore runs on a residential connection via a `launchd` job. `scripts/garmin-sync.mjs` implements Garmin's undocumented auth flow (SSO ticket → HMAC-SHA1-signed OAuth1 request → OAuth2 token exchange) with no third-party dependencies, and caches tokens locally so a 30-minute polling interval does not trigger a full SSO login on every run.
 
 **Secrets never reach the browser.** Only the Supabase URL and anon key are inlined into the bundle. Third-party API credentials live in edge function secrets, and the service role key exists only in the local sync script's environment.
-
-## Screenshots
-
-| Dashboard | Training analytics | Cardio | Micronutrients |
-| --- | --- | --- | --- |
-| <img src="docs/screenshots/dashboard.png" width="200" alt="Daily overview with calorie, water, training and weight tiles above the routine list"> | <img src="docs/screenshots/stats.png" width="200" alt="Training scores, weekly volume chart and per-exercise 1RM trend"> | <img src="docs/screenshots/cardio.png" width="200" alt="Activity feed with a GPS route map and pace, time and elevation stats"> | <img src="docs/screenshots/nutrition.png" width="200" alt="Micronutrient intake against recommended daily allowances"> |
-
-Taken from demo mode, so the data shown is generated, not personal.
 
 ## Setup
 
