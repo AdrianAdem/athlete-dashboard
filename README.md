@@ -1,5 +1,6 @@
-# Athlete Dashboard
+<img src="docs/hero.png" alt="athlete-dashboard — one schema, all of it" width="100%"/>
 
+<p><img src="https://img.shields.io/badge/license-MIT-0B0B0D?style=flat-square" alt="" height="20"/> <img src="https://img.shields.io/badge/react-19-0B0B0D?style=flat-square" alt="" height="20"/> <img src="https://img.shields.io/badge/supabase-postgres%20%2B%20RLS-0B0B0D?style=flat-square" alt="" height="20"/> <img src="https://img.shields.io/badge/tables-22-FF3D00?style=flat-square" alt="" height="20"/></p>
 A self-hosted health and training tracker that unifies strength training, cardio, nutrition, and wearable biometrics in one mobile web app.
 
 Fitness data is fragmented across vendor silos: strength logs in one app, runs in Strava, sleep and HRV locked inside Garmin Connect, nutrition somewhere else. None of them answer a question like "did my HRV drop in the weeks my training volume spiked?" Athlete Dashboard pulls all of it into a single Postgres database behind a single UI, so the data can actually be correlated. It ships as an installable mobile web app deployed as a static bundle, with no backend server to maintain.
