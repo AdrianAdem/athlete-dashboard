@@ -1,13 +1,22 @@
-<img src="docs/hero.png" alt="athlete-dashboard — one schema, all of it" width="100%"/>
+<div align="center">
 
-<p><img src="https://img.shields.io/badge/license-MIT-0A0C0B?style=flat-square" alt="" height="20"/> <img src="https://img.shields.io/badge/react-19-0A0C0B?style=flat-square" alt="" height="20"/> <img src="https://img.shields.io/badge/supabase-postgres%20%2B%20RLS-0A0C0B?style=flat-square" alt="" height="20"/> <img src="https://img.shields.io/badge/tables-22-B8F04A?style=flat-square" alt="" height="20"/></p>
+<img src="docs/hero.png" alt="athlete-dashboard — four vendor silos, one postgres schema" width="100%"/>
+
+### Strength, cardio, nutrition and wearable biometrics behind a single Postgres schema, so the data can finally be correlated.
+
+<p>
+<img src="https://img.shields.io/badge/license-MIT-0A0C0B?style=for-the-badge" alt="" height="30"/>
+<img src="https://img.shields.io/badge/react-19-0A0C0B?style=for-the-badge&logo=react&logoColor=61DAFB" alt="" height="30"/>
+<img src="https://img.shields.io/badge/supabase-postgres%20%2B%20RLS-0A0C0B?style=for-the-badge&logo=supabase&logoColor=3FCF8E" alt="" height="30"/>
+<img src="https://img.shields.io/badge/tables-22-B8F04A?style=for-the-badge" alt="" height="30"/>
+<img src="https://img.shields.io/badge/live%20demo-no%20account%20needed-B8F04A?style=for-the-badge" alt="" height="30"/>
+</p>
+
+</div>
 
 **Contents** &nbsp;·&nbsp; [Features](#features) &nbsp;·&nbsp; [Screenshots](#screenshots) &nbsp;·&nbsp; [Tech Stack](#tech-stack) &nbsp;·&nbsp; [Architecture](#architecture) &nbsp;·&nbsp; [Setup](#setup) &nbsp;·&nbsp; [Usage](#usage) &nbsp;·&nbsp; [Project Structure](#project-structure) &nbsp;·&nbsp; [Notes](#notes) &nbsp;·&nbsp; [License](#license)
 
-
 **[Open the live demo →](https://adrianadem.github.io/athlete-dashboard/)** It runs entirely in the browser against seeded fixtures: no account, no backend, and the numbers are generated rather than mine.
-
-A self-hosted health and training tracker that unifies strength training, cardio, nutrition, and wearable biometrics in one mobile web app.
 
 Fitness data is fragmented across vendor silos: strength logs in one app, runs in Strava, sleep and HRV locked inside Garmin Connect, nutrition somewhere else. None of them answer a question like "did my HRV drop in the weeks my training volume spiked?" Athlete Dashboard pulls all of it into a single Postgres database behind a single UI, so the data can actually be correlated. It ships as an installable mobile web app deployed as a static bundle, with no backend server to maintain.
 
