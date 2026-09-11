@@ -1,22 +1,30 @@
 <div align="center">
 
-<img src="docs/hero.png" alt="athlete-dashboard — four vendor silos, one postgres schema" width="100%"/>
-
-### Strength, cardio, nutrition and wearable biometrics behind a single Postgres schema, so the data can finally be correlated.
-
-<p>
-<img src="https://img.shields.io/badge/license-MIT-B8F04A?style=for-the-badge&labelColor=131614" alt=""/> <img src="https://img.shields.io/badge/react-19-61DAFB?style=for-the-badge&logo=react&logoColor=white&labelColor=131614" alt=""/> <img src="https://img.shields.io/badge/supabase-postgres%20%2B%20RLS-3FCF8E?style=for-the-badge&logo=supabase&logoColor=white&labelColor=131614" alt=""/> <img src="https://img.shields.io/badge/tables-22-B8F04A?style=for-the-badge&labelColor=131614" alt=""/> <img src="https://img.shields.io/badge/demo%20mode-npm%20run%20demo-B8F04A?style=for-the-badge&labelColor=131614" alt=""/>
-</p>
+<img src="docs/hero-v2.png" alt="Athlete Dashboard — Training, nutrition and recovery in one personal dashboard." width="100%"/>
 
 <br>
 
+### Training, nutrition and recovery in one personal dashboard.
+
+<br>
+
+<a href="#setup"><img src="https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react&logoColor=white" alt="React: 19"/></a> <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-E87969?style=for-the-badge" alt="License: MIT"/></a> <a href="#try-it-without-a-backend"><img src="https://img.shields.io/badge/Preview-Local%20demo-E87969?style=for-the-badge" alt="Preview: Local demo"/></a> <a href="https://github.com/AdrianAdem/athlete-dashboard"><img src="https://img.shields.io/badge/Source-GitHub-737C88?style=for-the-badge&logo=github&logoColor=white" alt="Source: GitHub"/></a>
+
+<br><br>
+
+<a href="#screenshots">Screenshots</a> &nbsp; · &nbsp; <a href="#setup">Get started</a> &nbsp; · &nbsp; <a href="#license">License</a>
+
+<br><br>
+
 </div>
 
-**Contents** &nbsp;·&nbsp; [Features](#features) &nbsp;·&nbsp; [Screenshots](#screenshots) &nbsp;·&nbsp; [Tech Stack](#tech-stack) &nbsp;·&nbsp; [Architecture](#architecture) &nbsp;·&nbsp; [Setup](#setup) &nbsp;·&nbsp; [Usage](#usage) &nbsp;·&nbsp; [Project Structure](#project-structure) &nbsp;·&nbsp; [Notes](#notes) &nbsp;·&nbsp; [License](#license)
+This repository contains my personal single-user app. For a backend-free preview with generated fixtures, use [local demo mode](#try-it-without-a-backend). The existing deployment is my personal instance, not a public demo.
 
-The deployed build at `adrianadem.github.io/athlete-dashboard` is my own running instance and needs my Supabase session, so it is not a public demo. To see the app without a backend, run demo mode locally — it ships with fixtures and needs no account: [Try it without a backend](#try-it-without-a-backend).
+**Before connecting real data:** the current app uses a fixed user ID and permissive RLS policies rather than Supabase Auth. Those policies do not provide user isolation. Review authentication and access policies before deploying your own instance.
 
 Fitness data is fragmented across vendor silos: strength logs in one app, runs in Strava, sleep and HRV locked inside Garmin Connect, nutrition somewhere else. None of them answer a question like "did my HRV drop in the weeks my training volume spiked?" Athlete Dashboard pulls all of it into a single Postgres database behind a single UI, so the data can actually be correlated. It ships as an installable mobile web app deployed as a static bundle, with no backend server to maintain.
+
+<br>
 
 ## Features
 
@@ -28,28 +36,40 @@ Fitness data is fragmented across vendor silos: strength logs in one app, runs i
 - **Wearable biometrics** — daily Garmin sync of resting heart rate, HRV, sleep stages and score, Body Battery, stress, VO2max, and steps
 - **Dashboard** — daily overview of calories, water, training status, routines, and the latest biometrics
 
+<br>
+
 ## Screenshots
 
-| Dashboard | Training analytics | Cardio | Micronutrients |
-| --- | --- | --- | --- |
-| <img src="docs/screenshots/dashboard.png" width="200" alt="Daily overview with calorie, water, training and weight tiles above the routine list"> | <img src="docs/screenshots/stats.png" width="200" alt="Training scores, weekly volume chart and per-exercise 1RM trend"> | <img src="docs/screenshots/cardio.png" width="200" alt="Activity feed with a GPS route map and pace, time and elevation stats"> | <img src="docs/screenshots/nutrition.png" width="200" alt="Micronutrient intake against recommended daily allowances"> |
+<p align="center">
+<img src="docs/screenshots/dashboard.png" width="340" alt="Demo: daily training, nutrition and routines"/>
+&nbsp;&nbsp;
+<img src="docs/screenshots/stats.png" width="340" alt="Demo: training analytics and exercise progress"/>
+</p>
+
+<details>
+<summary>Cardio and nutrition screens</summary>
+
+<p align="center">
+<img src="docs/screenshots/cardio.png" width="340" alt="Demo: cardio activities and route map"/>
+&nbsp;&nbsp;
+<img src="docs/screenshots/nutrition.png" width="340" alt="Demo: micronutrient intake"/>
+</p>
+
+</details>
 
 Taken from demo mode, so the data shown is generated, not personal.
 
+<br>
+
 ## Tech Stack
 
-![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)
-![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178C6?logo=typescript&logoColor=white)
-![Vite](https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white)
-![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?logo=tailwindcss&logoColor=white)
-![Supabase](https://img.shields.io/badge/Supabase-Postgres_+_Edge_Functions-3FCF8E?logo=supabase&logoColor=white)
-![Deno](https://img.shields.io/badge/Deno-Edge_Functions-000000?logo=deno&logoColor=white)
-![License](https://img.shields.io/badge/License-MIT-yellow.svg)
 
 **Frontend** — React 19, TypeScript, Vite, Tailwind CSS 4, Radix UI primitives, Recharts, Leaflet, React Router 7
 **Backend** — Supabase (Postgres with row-level security, Deno edge functions)
 **Integrations** — Garmin Connect, Strava, FatSecret, Anthropic Claude
 **CI/CD** — GitHub Actions build and deploy to GitHub Pages
+
+<br>
 
 ## Architecture
 
@@ -95,6 +115,8 @@ Two design decisions worth calling out:
 **Garmin sync runs locally, not in an edge function.** Garmin's `connectapi.garmin.com` gateway hard-blocks datacenter IP ranges — every request from Supabase's infrastructure returns `429`. The sync therefore runs on a residential connection via a `launchd` job. `scripts/garmin-sync.mjs` implements Garmin's undocumented auth flow (SSO ticket → HMAC-SHA1-signed OAuth1 request → OAuth2 token exchange) with no third-party dependencies, and caches tokens locally so a 30-minute polling interval does not trigger a full SSO login on every run.
 
 **Secrets never reach the browser.** Only the Supabase URL and anon key are inlined into the bundle. Third-party API credentials live in edge function secrets, and the service role key exists only in the local sync script's environment.
+
+<br>
 
 ## Setup
 
@@ -149,6 +171,8 @@ Set these in the Supabase dashboard under **Edge Functions → Secrets**, not in
 
 Pushing to `main` triggers `.github/workflows/deploy.yml`, which builds and publishes to GitHub Pages. Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` as repository secrets first.
 
+<br>
+
 ## Usage
 
 ```bash
@@ -177,6 +201,8 @@ Edge functions deploy with the Supabase CLI:
 supabase functions deploy food-lookup
 ```
 
+<br>
+
 ## Project Structure
 
 ```
@@ -191,11 +217,15 @@ scripts/
   garmin-sync.mjs  local Garmin Connect sync
 ```
 
+<br>
+
 ## Notes
 
 This is a personal single-user application. It uses a fixed user ID rather than Supabase Auth, and the RLS policies on app tables are permissive by design. Adding real authentication would be a prerequisite for any multi-user deployment.
 
 Garmin Connect exposes no public API for this data. The sync script targets an undocumented, unofficial endpoint set that Garmin may change or block at any time.
+
+<br>
 
 ## License
 
