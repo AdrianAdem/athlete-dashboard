@@ -11,9 +11,9 @@ export interface UserProfile {
   birth_date: string | null;
   height_cm: number | null;
   calorie_goal: number;
-  protein_goal: number;
-  carbs_goal: number;
-  fat_goal: number;
+  protein_goal: number | null; // null = derived from calorie goal
+  carbs_goal: number | null;
+  fat_goal: number | null;
   water_goal_ml: number;
   created_at: string;
 }
@@ -90,7 +90,7 @@ export interface NutritionLog {
   fat_g: number;
   fiber_g: number;
   quantity_g: number;
-  // Micronutrients (only those FatSecret provides; null/0 for manual entries).
+  // Micronutrients from the food database; null/0 where it has no value.
   vitamin_a_mcg?: number | null;
   vitamin_c_mg?: number | null;
   vitamin_d_mcg?: number | null;
