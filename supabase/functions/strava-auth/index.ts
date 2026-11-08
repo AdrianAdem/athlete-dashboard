@@ -20,6 +20,16 @@ const corsHeaders = {
 const REQUIRED_SCOPE = "activity:read_all";
 const STATE_TTL_MS = 10 * 60 * 1000;
 
+// Single-user app: only this user id may start a flow. Without the check a
+// stranger could mint nonces for arbitrary ids and park their own Strava
+// account (and quota use) in our tables.
+const OWNER_USER_ID = Deno.env.get("OWNER_USER_ID") ?? "00000000-0000-0000-0000-000000000001";
+
+// Optional hard pin. When set, only this athlete can ever connect, even on a
+// fresh database where strava_owner is still empty. Without it the first
+// successful connect becomes the pinned owner.
+const OWNER_ATHLETE_ID = Number(Deno.env.get("STRAVA_OWNER_ATHLETE_ID") ?? NaN);
+
 function getSupabaseAdmin() {
   return createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 }
@@ -51,7 +61,7 @@ function redirectToSettings(params: Record<string, string>): Response {
 // Issues a one-time state nonce and returns the Strava OAuth URL.
 async function handleAuthorize(url: URL): Promise<Response> {
   const userId = url.searchParams.get("user_id");
-  if (!userId) return json({ error: "user_id required" }, 400);
+  if (userId !== OWNER_USER_ID) return json({ error: "Unknown user" }, 403);
 
   const state = crypto.randomUUID();
   const supabase = getSupabaseAdmin();
@@ -121,6 +131,10 @@ async function handleCallback(url: URL): Promise<Response> {
   }
   const tokenData = await tokenRes.json();
   const athleteId = Number(tokenData.athlete?.id);
+  if (Number.isFinite(OWNER_ATHLETE_ID) && athleteId !== OWNER_ATHLETE_ID) {
+    console.error("Rejected Strava connect from non-configured athlete", athleteId);
+    return redirectToSettings({ strava: "error", reason: "wrong_account" });
+  }
 
   const { data: owner } = await supabase
     .from("strava_owner")
@@ -182,6 +196,7 @@ async function handleStatus(url: URL): Promise<Response> {
 // Still callable without auth (no login exists), but the owner pin survives,
 // so the worst a stranger can do is force a reconnect.
 async function handleDisconnect(body: { user_id: string }): Promise<Response> {
+  if (body.user_id !== OWNER_USER_ID) return json({ error: "Unknown user" }, 403);
   const supabase = getSupabaseAdmin();
   const { data: token } = await supabase
     .from("strava_tokens")

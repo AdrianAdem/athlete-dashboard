@@ -547,8 +547,10 @@ export function AusdauerPage() {
     // Stats, goals and records all derive from this list, so it must hold more
     // than the latest few; 500 covers years of training for one person.
     const [acts, status] = await Promise.allSettled([getCardioActivities(500), getStravaStatus()]);
-    if (acts.status === "fulfilled") setActivities(acts.value as CardioActivity[]);
-    else setLoadError("Aktivitäten konnten nicht geladen werden");
+    if (acts.status === "fulfilled") {
+      setActivities(acts.value as CardioActivity[]);
+      setLoadError(null);
+    } else setLoadError("Aktivitäten konnten nicht geladen werden");
     if (status.status === "fulfilled") setStravaConnected(status.value.connected);
     setLoading(false);
   }, []);

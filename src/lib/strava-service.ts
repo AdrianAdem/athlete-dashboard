@@ -54,28 +54,11 @@ export async function disconnectStrava(): Promise<void> {
   await stravaFetch("strava-auth/disconnect", postJson({ user_id: USER_ID }));
 }
 
-interface SyncPage {
-  imported: number;
-  total_fetched: number;
-  has_more: boolean;
-}
-
-// Strava pages are capped at 100; a single page silently dropped everything
-// beyond it when more than one page of activities piled up between syncs.
-const MAX_SYNC_PAGES = 10;
-
-export async function syncStravaActivities(): Promise<{ imported: number }> {
-  if (IS_DEMO) return { imported: 0 };
-  let imported = 0;
-  for (let page = 1; page <= MAX_SYNC_PAGES; page++) {
-    const result = await stravaFetch<SyncPage>(
-      "strava-sync/activities",
-      postJson({ user_id: USER_ID, page, per_page: 100 }),
-    );
-    imported += result.imported;
-    if (!result.has_more) break;
-  }
-  return { imported };
+export async function syncStravaActivities(): Promise<{ imported: number; skipped: number }> {
+  if (IS_DEMO) return { imported: 0, skipped: 0 };
+  // The edge function pages through Strava itself and only fetches activities
+  // newer than the newest stored one.
+  return stravaFetch("strava-sync/activities", postJson({ user_id: USER_ID }));
 }
 
 export async function getCardioActivities(limit = 50) {
@@ -132,21 +115,4 @@ export async function saveManualActivity(activity: {
     .single();
   if (error) throw error;
   return data;
-}
-
-/** All activities with start_date in [startDate, endDate] (YYYY-MM-DD, end inclusive). */
-export async function getCardioActivitiesForDateRange(startDate: string, endDate: string) {
-  // start_date is a timestamp; comparing it with "<= endDate" would cut off
-  // the whole end day, so compare against the start of the following day.
-  const end = new Date(`${endDate}T00:00:00`);
-  end.setDate(end.getDate() + 1);
-  const { data, error } = await supabase
-    .from("cardio_activities")
-    .select("*")
-    .eq("user_id", USER_ID)
-    .gte("start_date", new Date(`${startDate}T00:00:00`).toISOString())
-    .lt("start_date", end.toISOString())
-    .order("start_date", { ascending: false });
-  if (error) throw new Error(error.message);
-  return data ?? [];
 }

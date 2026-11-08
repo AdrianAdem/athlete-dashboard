@@ -129,7 +129,7 @@ export function SettingsPage() {
     setStravaSyncing(true);
     try {
       const result = await syncStravaActivities();
-      setStravaMsg(`${result.imported} Aktivitäten synchronisiert`);
+      setStravaMsg(`${result.imported} neue Aktivitäten synchronisiert`);
     } catch (err) {
       setStravaMsg(`Sync fehlgeschlagen: ${(err as Error).message}`);
     }
