@@ -28,7 +28,10 @@ const OWNER_USER_ID = Deno.env.get("OWNER_USER_ID") ?? "00000000-0000-0000-0000-
 // Optional hard pin. When set, only this athlete can ever connect, even on a
 // fresh database where strava_owner is still empty. Without it the first
 // successful connect becomes the pinned owner.
-const OWNER_ATHLETE_ID = Number(Deno.env.get("STRAVA_OWNER_ATHLETE_ID") ?? NaN);
+// An empty secret must mean "not set": Number("") is 0, which would reject the
+// real owner on every connect.
+const ownerAthleteRaw = Deno.env.get("STRAVA_OWNER_ATHLETE_ID")?.trim();
+const OWNER_ATHLETE_ID = ownerAthleteRaw ? Number(ownerAthleteRaw) : NaN;
 
 function getSupabaseAdmin() {
   return createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
@@ -176,7 +179,7 @@ async function handleCallback(url: URL): Promise<Response> {
 // GET /strava-auth/status?user_id=xxx — connection status, no token material
 async function handleStatus(url: URL): Promise<Response> {
   const userId = url.searchParams.get("user_id");
-  if (!userId) return json({ error: "user_id required" }, 400);
+  if (userId !== OWNER_USER_ID) return json({ error: "Unknown user" }, 403);
 
   const { data } = await getSupabaseAdmin()
     .from("strava_tokens")

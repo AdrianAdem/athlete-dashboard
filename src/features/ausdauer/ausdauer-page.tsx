@@ -563,8 +563,11 @@ export function AusdauerPage() {
     setSyncing(true);
     setLoadError(null);
     try {
-      await syncStravaActivities();
+      const result = await syncStravaActivities();
       await fetchData();
+      if (result.skipped > 0) {
+        setLoadError(`${result.skipped} Aktivitäten konnten nicht gespeichert werden`);
+      }
     } catch (err) {
       setLoadError(`Sync fehlgeschlagen: ${(err as Error).message}`);
     } finally {

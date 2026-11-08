@@ -187,11 +187,18 @@ async function saveRows(rows: ActivityRow[]): Promise<{ saved: number; skipped: 
 
 const PER_PAGE = 100;
 const MAX_PAGES = 10;
+// Strava's `after` filters by start time, not upload time. A run recorded
+// Monday but uploaded Wednesday starts before Tuesday's already-synced
+// activity, so a cutoff at the newest stored start would skip it forever.
+// Re-reading a two-week window catches late uploads and later edits; the
+// upsert makes the overlap harmless and it usually stays one request.
+const LOOKBACK_SECONDS = 14 * 24 * 60 * 60;
 
-// POST /strava-sync/activities — import new activities (all pages).
-// Incremental by default: only activities newer than the newest stored one,
-// fixed once before paging. Recomputing it per page would shift the window as
-// page 1 is saved and silently skip activities. `full: true` re-imports all.
+// POST /strava-sync/activities — import activities, all pages.
+// The cutoff is fixed once before paging (recomputing it per page would shift
+// the window while page 1 is saved). `after` is always sent, so Strava returns
+// oldest first and an interrupted run (has_more) continues on the next sync
+// without gaps. First sync or `full: true` starts at 0, i.e. everything.
 async function handleSync(body: { user_id: string; full?: boolean }): Promise<Response> {
   const { token, error: tokenError } = await getValidToken(body.user_id);
   if (tokenError) {
@@ -201,9 +208,9 @@ async function handleSync(body: { user_id: string; full?: boolean }): Promise<Re
     });
   }
 
-  let after = "";
+  let afterEpoch = 0;
   if (!body.full) {
-    const { data: newest } = await getSupabaseAdmin()
+    const { data: newest, error: newestError } = await getSupabaseAdmin()
       .from("cardio_activities")
       .select("start_date")
       .eq("user_id", body.user_id)
@@ -211,8 +218,20 @@ async function handleSync(body: { user_id: string; full?: boolean }): Promise<Re
       .order("start_date", { ascending: false })
       .limit(1)
       .maybeSingle();
-    if (newest) after = `&after=${Math.floor(new Date(newest.start_date).getTime() / 1000)}`;
+    if (newestError) {
+      return new Response(JSON.stringify({ error: "Could not read sync position" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (newest) {
+      afterEpoch = Math.max(
+        0,
+        Math.floor(new Date(newest.start_date).getTime() / 1000) - LOOKBACK_SECONDS,
+      );
+    }
   }
+  const after = `&after=${afterEpoch}`;
 
   let imported = 0;
   let skipped = 0;
@@ -237,9 +256,8 @@ async function handleSync(body: { user_id: string; full?: boolean }): Promise<Re
     if (!hasMore) break;
   }
 
-  // has_more is true only if MAX_PAGES was not enough. With `after`, Strava
-  // returns oldest first, so the next incremental sync continues from the
-  // newest stored activity without gaps.
+  // has_more: MAX_PAGES was not enough; the next sync continues from the
+  // newest stored activity (minus the lookback window).
   return new Response(JSON.stringify({ imported, skipped, has_more: hasMore }), {
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
