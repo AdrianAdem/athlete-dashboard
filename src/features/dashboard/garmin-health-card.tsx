@@ -2,16 +2,28 @@ import { useState, useEffect } from "react";
 import { Heart, Moon, Activity, Footprints, Battery, Wind } from "lucide-react";
 import { getGarminData } from "@/lib/garmin-service";
 import type { GarminHealthData } from "@/lib/garmin-service";
-import { cn } from "@/lib/utils";
+import { cn, daysFromToday, todayString } from "@/lib/utils";
 
-function dateStr(daysAgo = 0) {
-  const d = new Date();
-  d.setDate(d.getDate() - daysAgo);
-  return d.toISOString().split("T")[0];
+// Rounding minutes on their own turns 3h 59.6m into "3h 60m".
+function formatHoursMinutes(sec: number): string {
+  const totalMin = Math.round(sec / 60);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+function formatDay(date: string): string {
+  return new Date(`${date}T12:00:00`).toLocaleDateString("de-DE", {
+    day: "numeric",
+    month: "long",
+  });
 }
 
 export function GarminHealthCard() {
   const [health, setHealth] = useState<GarminHealthData | null>(null);
+  const [healthDate, setHealthDate] = useState<string | null>(null);
+  const [deviceLastSync, setDeviceLastSync] = useState<string | null>(null);
+  const [hasAnyRow, setHasAnyRow] = useState(false);
   const [checked, setChecked] = useState(false);
 
   useEffect(() => {
@@ -19,16 +31,20 @@ export function GarminHealthCard() {
       try {
         // Data is pushed by the local sync script; show the most recent day
         // that actually has daily metrics (today is often still incomplete).
-        const entries = await getGarminData(dateStr(7), dateStr(0));
+        const entries = await getGarminData(daysFromToday(-7), todayString());
         const sorted = entries.sort((a, b) => b.date.localeCompare(a.date));
+        setHasAnyRow(sorted.length > 0);
+        setDeviceLastSync(sorted[0]?.data?.device_last_sync ?? null);
         // "daily" can exist with all-null values on a day the watch hasn't
         // synced yet — require an actual measurement.
-        const latest =
-          sorted.find((e) => {
-            const daily = e.data?.daily;
-            return daily && (daily.steps != null || daily.resting_hr != null);
-          }) ?? sorted[0];
-        if (latest) setHealth(latest.data);
+        const latest = sorted.find((e) => {
+          const daily = e.data?.daily;
+          return daily && (daily.steps != null || daily.resting_hr != null);
+        });
+        if (latest) {
+          setHealth(latest.data);
+          setHealthDate(latest.date);
+        }
       } catch {
         // No data yet or fetch failed
       }
@@ -37,8 +53,26 @@ export function GarminHealthCard() {
     load();
   }, []);
 
-  // Don't render until checked; hide if no data has been synced yet
-  if (!checked || !health) return null;
+  // Hidden until loaded, and when the Garmin sync was never set up.
+  if (!checked || !hasAnyRow) return null;
+
+  // Rows exist but none has real measurements: the sync runs, the watch does
+  // not upload. A grid of dashes hid that for four months; say it plainly.
+  if (!health) {
+    return (
+      <div>
+        <h2 className="mb-3 text-lg font-bold">Gesundheit</h2>
+        <div className="rounded-xl bg-card p-4">
+          <p className="text-sm font-medium">Keine aktuellen Messwerte</p>
+          <p className="mt-1 text-xs text-neutral-500">
+            {deviceLastSync
+              ? `Die Uhr hat zuletzt am ${formatDay(deviceLastSync.slice(0, 10))} an Garmin Connect übertragen. Garmin-Connect-App öffnen und Uhr koppeln.`
+              : "In den letzten 7 Tagen kamen keine Werte von der Uhr an."}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   const d = health?.daily;
   const s = health?.sleep;
@@ -46,9 +80,7 @@ export function GarminHealthCard() {
   const vo2 = health?.vo2max;
 
   // Sleep duration in hours:minutes
-  const sleepDur = s?.duration_sec
-    ? `${Math.floor(s.duration_sec / 3600)}h ${Math.round((s.duration_sec % 3600) / 60)}m`
-    : null;
+  const sleepDur = s?.duration_sec ? formatHoursMinutes(s.duration_sec) : null;
 
   // Body battery range
   const bbRange =
@@ -67,8 +99,11 @@ export function GarminHealthCard() {
 
   return (
     <div>
-      <div className="mb-3">
+      <div className="mb-3 flex items-baseline justify-between">
         <h2 className="text-lg font-bold">Gesundheit</h2>
+        {healthDate && healthDate !== todayString() && (
+          <span className="text-xs text-neutral-500">Stand {formatDay(healthDate)}</span>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-2">
@@ -175,12 +210,6 @@ function SleepBar({ sleep }: { sleep: NonNullable<GarminHealthData["sleep"]> }) 
     { label: "Wach", sec: sleep.awake_sec ?? 0, color: "bg-neutral-600" },
   ];
 
-  const fmtMin = (sec: number) => {
-    const h = Math.floor(sec / 3600);
-    const m = Math.round((sec % 3600) / 60);
-    return h > 0 ? `${h}h ${m}m` : `${m}m`;
-  };
-
   return (
     <div>
       {/* Stacked bar */}
@@ -199,7 +228,7 @@ function SleepBar({ sleep }: { sleep: NonNullable<GarminHealthData["sleep"]> }) 
           <div key={p.label} className="flex items-center gap-1">
             <div className={cn("h-2 w-2 rounded-full", p.color)} />
             <span className="text-[10px] text-neutral-500">
-              {p.label} {fmtMin(p.sec)}
+              {p.label} {formatHoursMinutes(p.sec)}
             </span>
           </div>
         ))}

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Home, Dumbbell, Flame, HeartPulse, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useWorkout } from "@/lib/workout-context";
 
 const tabs = [
   { path: "/sport", label: "Sport", icon: Dumbbell },
@@ -14,7 +15,15 @@ const tabs = [
 export function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { workoutActive } = useWorkout();
   const [keyboardOpen, setKeyboardOpen] = useState(false);
+
+  // Full-screen sessions own the bottom edge: their controls sit where the nav
+  // would be, and one mis-tap on a tab used to unmount the page and throw away
+  // a running GPS recording.
+  const immersive =
+    location.pathname === "/ausdauer/training" ||
+    (workoutActive && location.pathname === "/sport/loggen");
 
   // iOS Safari: position:fixed elements detach from the bottom while the
   // on-screen keyboard shrinks the visual viewport and often stay stuck
@@ -38,14 +47,14 @@ export function Layout() {
 
   return (
     <div className="flex min-h-screen flex-col bg-background pt-[env(safe-area-inset-top,0px)]">
-      <main className="flex-1 overflow-y-auto pb-24">
+      <main className={cn("flex-1 overflow-y-auto", !immersive && "pb-24")}>
         <Outlet />
       </main>
 
       <nav
         className={cn(
           "fixed inset-x-0 bottom-0 z-50 bg-background/95 backdrop-blur pb-[env(safe-area-inset-bottom,8px)]",
-          keyboardOpen && "hidden",
+          (keyboardOpen || immersive) && "hidden",
         )}
       >
         <div className="flex h-14 items-end justify-around pb-1">

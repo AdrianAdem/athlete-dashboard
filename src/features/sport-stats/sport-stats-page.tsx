@@ -14,6 +14,7 @@ import { supabase } from "@/lib/supabase";
 import { USER_ID } from "@/lib/constants";
 import { TrendingUp, Activity, Zap, BarChart3, ChevronDown, Search, X } from "lucide-react";
 import type { TrainingLog, TrainingExercise, SetLog } from "@/types/database";
+import { toLocalDateString } from "@/lib/utils";
 
 function ExerciseDropdown({
   exercises,
@@ -209,7 +210,7 @@ export function SportStatsPage() {
     const daysBack = getDaysBack();
     const since = new Date();
     since.setDate(since.getDate() - daysBack);
-    const sinceStr = since.toISOString().split("T")[0];
+    const sinceStr = toLocalDateString(since);
 
     // Fetch all logs for time range
     const { data: logs } = await supabase
@@ -226,7 +227,7 @@ export function SportStatsPage() {
       .from("training_logs")
       .select("date")
       .eq("user_id", USER_ID)
-      .gte("date", calSince.toISOString().split("T")[0]);
+      .gte("date", toLocalDateString(calSince));
 
     if (calLogs) {
       const days = new Set(calLogs.map((l) => l.date as string));
@@ -243,7 +244,7 @@ export function SportStatsPage() {
 
         let hasTraining = false;
         for (let d = new Date(weekStart); d <= weekEnd; d.setDate(d.getDate() + 1)) {
-          if (days.has(d.toISOString().split("T")[0])) {
+          if (days.has(toLocalDateString(d))) {
             hasTraining = true;
             break;
           }
@@ -265,7 +266,7 @@ export function SportStatsPage() {
         const d = new Date(log.date);
         const weekStart = new Date(d);
         weekStart.setDate(d.getDate() - d.getDay() + 1);
-        const key = weekStart.toISOString().split("T")[0];
+        const key = toLocalDateString(weekStart);
         const totalSets = (log.sets_completed as SetLog[]).length;
         weekMap.set(key, (weekMap.get(key) ?? 0) + totalSets);
       });
@@ -385,7 +386,7 @@ export function SportStatsPage() {
 
     let currentWeek: CalDay[] = [];
     for (let d = new Date(start); d <= now; d.setDate(d.getDate() + 1)) {
-      const dateStr = d.toISOString().split("T")[0];
+      const dateStr = toLocalDateString(d);
       currentWeek.push({ date: new Date(d), hasTraining: trainingDays.has(dateStr) });
       if (currentWeek.length === 7) {
         weeks.push(currentWeek);
@@ -632,8 +633,7 @@ export function SportStatsPage() {
             <div key={wi} className="flex gap-1">
               {week.map((day, di) => {
                 if (!day) return <div key={di} className="flex-1" />;
-                const isToday =
-                  day.date.toISOString().split("T")[0] === new Date().toISOString().split("T")[0];
+                const isToday = toLocalDateString(day.date) === toLocalDateString(new Date());
                 return (
                   <div key={di} className="flex flex-1 items-center justify-center">
                     <div

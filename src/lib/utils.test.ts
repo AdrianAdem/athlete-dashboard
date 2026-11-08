@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { cn, isRoutineActiveToday, todayString } from "./utils";
+import { cn, isRoutineActiveToday, todayString, toLocalDateString } from "./utils";
 
 describe("cn", () => {
   it("merges conflicting tailwind classes, last one winning", () => {
@@ -35,5 +35,19 @@ describe("isRoutineActiveToday", () => {
   it("is active inside the range, including its boundaries", () => {
     expect(isRoutineActiveToday(shift(-1), shift(1))).toBe(true);
     expect(isRoutineActiveToday(today, today)).toBe(true);
+  });
+});
+
+describe("toLocalDateString", () => {
+  // The test script pins TZ=Europe/Berlin, so this is the German wall clock.
+  it("keeps entries made just after midnight on the new day", () => {
+    // 00:30 on 8 Nov in Berlin is still 23:30 on 7 Nov in UTC.
+    const justAfterMidnight = new Date("2026-11-07T23:30:00Z");
+    expect(justAfterMidnight.toISOString().slice(0, 10)).toBe("2026-11-07");
+    expect(toLocalDateString(justAfterMidnight)).toBe("2026-11-08");
+  });
+
+  it("also holds in summer time, where the gap is two hours", () => {
+    expect(toLocalDateString(new Date("2026-07-14T22:30:00Z"))).toBe("2026-07-15");
   });
 });
