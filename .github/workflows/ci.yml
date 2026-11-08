@@ -27,12 +27,19 @@ jobs:
 
       - name: Lint
         run: npm run lint
-        # The React Hooks rules flag pre-existing patterns that need a real
-        # refactor; surface them without failing the build for now.
-        continue-on-error: true
 
+      # `tsc --noEmit` on the root tsconfig checks nothing (files: []); the
+      # project references need build mode.
       - name: Typecheck
-        run: npx tsc --noEmit
+        run: npx tsc -b
+
+      # Edge functions are Deno, outside the TypeScript project above.
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Typecheck edge functions
+        run: deno check supabase/functions/*/index.ts
 
       - name: Test
         run: npm test
