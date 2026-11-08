@@ -8,7 +8,11 @@
 import { demoTables, demoFoodCatalogue } from "./demo-data";
 
 type Row = Record<string, unknown>;
-type Filter = { kind: "eq" | "gte" | "lte" | "in" | "ilike"; column: string; value: unknown };
+type Filter = {
+  kind: "eq" | "gte" | "lte" | "lt" | "in" | "ilike";
+  column: string;
+  value: unknown;
+};
 type Result<T> = { data: T; error: null } | { data: null; error: { message: string } };
 
 // Cloned once so mutations never leak back into the fixture module.
@@ -31,6 +35,8 @@ function matches(row: Row, filters: Filter[]): boolean {
         return String(cell) >= String(f.value);
       case "lte":
         return String(cell) <= String(f.value);
+      case "lt":
+        return String(cell) < String(f.value);
       case "in":
         return Array.isArray(f.value) && f.value.includes(cell);
       case "ilike":
@@ -97,6 +103,11 @@ class DemoQuery implements PromiseLike<Result<unknown>> {
 
   lte(column: string, value: unknown) {
     this.filters.push({ kind: "lte", column, value });
+    return this;
+  }
+
+  lt(column: string, value: unknown) {
+    this.filters.push({ kind: "lt", column, value });
     return this;
   }
 

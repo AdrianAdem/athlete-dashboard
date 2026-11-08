@@ -5,7 +5,31 @@ import { IS_DEMO } from "./demo-client";
 
 const FUNCTIONS_URL = import.meta.env.VITE_SUPABASE_URL + "/functions/v1";
 
-export async function getStravaStatus() {
+// Edge functions answer errors with JSON too; without this check an error body
+// would be returned as if it were data (e.g. `connected: undefined`).
+async function stravaFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${FUNCTIONS_URL}/${path}`, init);
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error ?? `Strava request failed (${res.status})`);
+  return body as T;
+}
+
+function postJson(body: Record<string, unknown>): RequestInit {
+  return {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  };
+}
+
+export interface StravaStatus {
+  connected: boolean;
+  athlete_name: string | null;
+  athlete_id: number | null;
+  last_updated: string | null;
+}
+
+export async function getStravaStatus(): Promise<StravaStatus> {
   // Demo mode has no edge functions; the fixture activities are already loaded,
   // so report a connected account rather than an error state.
   if (IS_DEMO) {
@@ -16,71 +40,69 @@ export async function getStravaStatus() {
       last_updated: new Date().toISOString(),
     };
   }
-  const res = await fetch(`${FUNCTIONS_URL}/strava-auth/status?user_id=${USER_ID}`);
-  return res.json() as Promise<{
-    connected: boolean;
-    athlete_name: string | null;
-    athlete_id: number | null;
-    last_updated: string | null;
-  }>;
+  return stravaFetch<StravaStatus>(`strava-auth/status?user_id=${USER_ID}`);
 }
 
-export async function getStravaAuthUrl() {
-  const res = await fetch(`${FUNCTIONS_URL}/strava-auth/authorize?user_id=${USER_ID}`);
-  const data = await res.json();
-  return data.url as string;
+export async function getStravaAuthUrl(): Promise<string> {
+  if (IS_DEMO) throw new Error("Im Demo-Modus nicht verfügbar");
+  const data = await stravaFetch<{ url: string }>(`strava-auth/authorize?user_id=${USER_ID}`);
+  return data.url;
 }
 
-export async function disconnectStrava() {
-  const res = await fetch(`${FUNCTIONS_URL}/strava-auth/disconnect`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ user_id: USER_ID }),
-  });
-  return res.json();
+export async function disconnectStrava(): Promise<void> {
+  if (IS_DEMO) throw new Error("Im Demo-Modus nicht verfügbar");
+  await stravaFetch("strava-auth/disconnect", postJson({ user_id: USER_ID }));
 }
 
-export async function syncStravaActivities(page = 1, perPage = 30) {
-  if (IS_DEMO) return { imported: 0, skipped: 5, total_fetched: 5, has_more: false };
-  const res = await fetch(`${FUNCTIONS_URL}/strava-sync/activities`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ user_id: USER_ID, page, per_page: perPage }),
-  });
-  return res.json() as Promise<{
-    imported: number;
-    skipped: number;
-    total_fetched: number;
-    has_more: boolean;
-  }>;
+interface SyncPage {
+  imported: number;
+  total_fetched: number;
+  has_more: boolean;
+}
+
+// Strava pages are capped at 100; a single page silently dropped everything
+// beyond it when more than one page of activities piled up between syncs.
+const MAX_SYNC_PAGES = 10;
+
+export async function syncStravaActivities(): Promise<{ imported: number }> {
+  if (IS_DEMO) return { imported: 0 };
+  let imported = 0;
+  for (let page = 1; page <= MAX_SYNC_PAGES; page++) {
+    const result = await stravaFetch<SyncPage>(
+      "strava-sync/activities",
+      postJson({ user_id: USER_ID, page, per_page: 100 }),
+    );
+    imported += result.imported;
+    if (!result.has_more) break;
+  }
+  return { imported };
 }
 
 export async function getCardioActivities(limit = 50) {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("cardio_activities")
     .select("*")
     .eq("user_id", USER_ID)
     .order("start_date", { ascending: false })
     .limit(limit);
+  if (error) throw new Error(error.message);
   return data ?? [];
 }
 
 export async function getActivityDetail(activityId: string) {
-  const res = await fetch(`${FUNCTIONS_URL}/strava-sync/activity`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ user_id: USER_ID, activity_id: activityId }),
-  });
-  return res.json() as Promise<Record<string, unknown>>;
+  if (IS_DEMO) return {};
+  return stravaFetch<Record<string, unknown>>(
+    "strava-sync/activity",
+    postJson({ user_id: USER_ID, activity_id: activityId }),
+  );
 }
 
 export async function getActivityStreams(activityId: string, keys?: string) {
-  const res = await fetch(`${FUNCTIONS_URL}/strava-sync/streams`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ user_id: USER_ID, activity_id: activityId, keys }),
-  });
-  return res.json() as Promise<Record<string, unknown[]>>;
+  if (IS_DEMO) return {};
+  return stravaFetch<Record<string, unknown[]>>(
+    "strava-sync/streams",
+    postJson({ user_id: USER_ID, activity_id: activityId, keys }),
+  );
 }
 
 export async function saveManualActivity(activity: {
@@ -112,13 +134,19 @@ export async function saveManualActivity(activity: {
   return data;
 }
 
+/** All activities with start_date in [startDate, endDate] (YYYY-MM-DD, end inclusive). */
 export async function getCardioActivitiesForDateRange(startDate: string, endDate: string) {
-  const { data } = await supabase
+  // start_date is a timestamp; comparing it with "<= endDate" would cut off
+  // the whole end day, so compare against the start of the following day.
+  const end = new Date(`${endDate}T00:00:00`);
+  end.setDate(end.getDate() + 1);
+  const { data, error } = await supabase
     .from("cardio_activities")
     .select("*")
     .eq("user_id", USER_ID)
-    .gte("start_date", startDate)
-    .lte("start_date", endDate)
+    .gte("start_date", new Date(`${startDate}T00:00:00`).toISOString())
+    .lt("start_date", end.toISOString())
     .order("start_date", { ascending: false });
+  if (error) throw new Error(error.message);
   return data ?? [];
 }

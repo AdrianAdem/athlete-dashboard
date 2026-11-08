@@ -539,10 +539,17 @@ export function AusdauerPage() {
   const [showStartMenu, setShowStartMenu] = useState(false);
   const [activeTab, setActiveTab] = useState<SubTab>("feed");
 
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   const fetchData = useCallback(async () => {
-    const [acts, status] = await Promise.all([getCardioActivities(50), getStravaStatus()]);
-    setActivities(acts as CardioActivity[]);
-    setStravaConnected(status.connected);
+    // allSettled: the Strava status comes from an edge function and fails
+    // offline, but the activities live in our own table and should still show.
+    // Stats, goals and records all derive from this list, so it must hold more
+    // than the latest few; 500 covers years of training for one person.
+    const [acts, status] = await Promise.allSettled([getCardioActivities(500), getStravaStatus()]);
+    if (acts.status === "fulfilled") setActivities(acts.value as CardioActivity[]);
+    else setLoadError("Aktivitäten konnten nicht geladen werden");
+    if (status.status === "fulfilled") setStravaConnected(status.value.connected);
     setLoading(false);
   }, []);
 
@@ -552,9 +559,12 @@ export function AusdauerPage() {
 
   const handleSync = async () => {
     setSyncing(true);
+    setLoadError(null);
     try {
       await syncStravaActivities();
       await fetchData();
+    } catch (err) {
+      setLoadError(`Sync fehlgeschlagen: ${(err as Error).message}`);
     } finally {
       setSyncing(false);
     }
@@ -607,6 +617,12 @@ export function AusdauerPage() {
           </button>
         )}
       </div>
+
+      {loadError && (
+        <p role="alert" className="rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-400">
+          {loadError}
+        </p>
+      )}
 
       {/* Week dashboard */}
       {activities.length > 0 && <WeekDashboard activities={activities} />}

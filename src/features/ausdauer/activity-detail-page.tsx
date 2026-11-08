@@ -21,6 +21,7 @@ import { USER_ID } from "@/lib/constants";
 import type { CardioActivity } from "@/types/database";
 import {
   decodePolyline,
+  getPolyline,
   formatDuration,
   formatPace,
   formatDistance,
@@ -155,13 +156,15 @@ export function ActivityDetailPage() {
         setActivity(data as CardioActivity);
 
         // If strava, fetch detail + streams using external_id
+        // allSettled: the stored activity renders even when the Strava edge
+        // function is unreachable (offline, Strava down).
         if (data.source === "strava" && data.external_id) {
-          const [det, str] = await Promise.all([
+          const [det, str] = await Promise.allSettled([
             getActivityDetail(data.external_id),
             getActivityStreams(data.external_id),
           ]);
-          setDetail(det);
-          setStreams(str);
+          if (det.status === "fulfilled") setDetail(det.value);
+          if (str.status === "fulfilled") setStreams(str.value);
         }
       }
       setLoading(false);
@@ -170,11 +173,17 @@ export function ActivityDetailPage() {
     load();
   }, [id]);
 
-  // Render map when detail available
+  // Strava detail carries the most precise route; live-recorded and offline
+  // activities only have the polyline stored in raw_data.
+  const routePolyline =
+    (detail?.map as { summary_polyline?: string } | undefined)?.summary_polyline ??
+    (activity ? getPolyline(activity) : undefined);
+
+  // Render map when a route is available
   useEffect(() => {
     if (!mapRef.current || mapInstance.current) return;
 
-    const polyline = (detail?.map as { summary_polyline?: string })?.summary_polyline;
+    const polyline = routePolyline;
     if (!polyline) return;
 
     const coords = decodePolyline(polyline);
@@ -219,7 +228,7 @@ export function ActivityDetailPage() {
       map.remove();
       mapInstance.current = null;
     };
-  }, [detail]);
+  }, [routePolyline]);
 
   if (loading) {
     return (
@@ -271,7 +280,7 @@ export function ActivityDetailPage() {
   const avgPace =
     splits.length > 0 ? splits.reduce((s, sp) => s + sp.pace, 0) / splits.length : null;
 
-  const hasMap = !!(detail?.map as { summary_polyline?: string })?.summary_polyline;
+  const hasMap = !!routePolyline;
 
   return (
     <div className="space-y-3 p-4 pb-24">

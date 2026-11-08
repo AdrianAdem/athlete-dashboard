@@ -48,7 +48,7 @@ async function getValidToken(userId: string): Promise<{ token: string; error?: s
   if (!refreshRes.ok) return { token: "", error: "Token refresh failed" };
 
   const refreshData = await refreshRes.json();
-  await supabase
+  const { error: saveError } = await supabase
     .from("strava_tokens")
     .update({
       access_token: refreshData.access_token,
@@ -57,8 +57,57 @@ async function getValidToken(userId: string): Promise<{ token: string; error?: s
       updated_at: new Date().toISOString(),
     })
     .eq("user_id", userId);
+  // Strava may rotate the refresh token on every refresh. If the new one is not
+  // stored, the old one is already invalid and the connection is lost for
+  // good, so surface this instead of carrying on with a one-off access token.
+  if (saveError) {
+    console.error("Saving refreshed Strava token failed:", saveError.message);
+    return { token: "", error: "Token refresh could not be saved" };
+  }
 
   return { token: refreshData.access_token };
+}
+
+// Strava activity ids are numeric. Anything else is rejected before it reaches
+// the URL, otherwise "../../athlete" would turn into an arbitrary Strava API call
+// made with the owner's token.
+const ACTIVITY_ID = /^\d{1,20}$/;
+const ALLOWED_STREAM_KEYS = new Set([
+  "time",
+  "distance",
+  "latlng",
+  "altitude",
+  "velocity_smooth",
+  "heartrate",
+  "cadence",
+  "watts",
+  "temp",
+  "moving",
+  "grade_smooth",
+]);
+
+function badRequest(message: string): Response {
+  return new Response(JSON.stringify({ error: message }), {
+    status: 400,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+// The subset of Strava's SummaryActivity this function maps.
+interface StravaActivity {
+  id: number;
+  type?: string;
+  sport_type?: string;
+  name: string;
+  start_date: string;
+  elapsed_time: number;
+  moving_time: number;
+  distance: number;
+  total_elevation_gain: number;
+  average_heartrate?: number;
+  max_heartrate?: number;
+  average_speed: number;
+  calories?: number;
 }
 
 // Map Strava activity type to our normalized type
@@ -114,50 +163,45 @@ async function handleSync(body: {
     });
   }
 
-  const activities = await res.json();
-  const supabase = getSupabaseAdmin();
+  const activities: StravaActivity[] = await res.json();
+  const rows = activities.map((a) => ({
+    user_id: body.user_id,
+    source: "strava",
+    external_id: String(a.id),
+    activity_type: normalizeActivityType(a.type ?? a.sport_type ?? "unknown"),
+    name: a.name,
+    start_date: a.start_date,
+    elapsed_time_sec: a.elapsed_time,
+    moving_time_sec: a.moving_time,
+    distance_m: a.distance,
+    elevation_gain_m: a.total_elevation_gain,
+    avg_heartrate: a.average_heartrate ? Math.round(a.average_heartrate) : null,
+    max_heartrate: a.max_heartrate ? Math.round(a.max_heartrate) : null,
+    avg_speed_ms: a.average_speed,
+    avg_pace_sec_per_km:
+      a.distance > 0 && a.moving_time > 0 ? Math.round(a.moving_time / (a.distance / 1000)) : null,
+    calories: a.calories ? Math.round(a.calories) : null,
+    raw_data: a,
+  }));
 
-  let imported = 0;
-  let skipped = 0;
-
-  for (const a of activities) {
-    const avgPace =
-      a.distance > 0 && a.moving_time > 0 ? Math.round(a.moving_time / (a.distance / 1000)) : null;
-
-    const { error: upsertError } = await supabase.from("cardio_activities").upsert(
-      {
-        user_id: body.user_id,
-        source: "strava",
-        external_id: String(a.id),
-        activity_type: normalizeActivityType(a.type ?? a.sport_type ?? "unknown"),
-        name: a.name,
-        start_date: a.start_date,
-        elapsed_time_sec: a.elapsed_time,
-        moving_time_sec: a.moving_time,
-        distance_m: a.distance,
-        elevation_gain_m: a.total_elevation_gain,
-        avg_heartrate: a.average_heartrate ? Math.round(a.average_heartrate) : null,
-        max_heartrate: a.max_heartrate ? Math.round(a.max_heartrate) : null,
-        avg_speed_ms: a.average_speed,
-        avg_pace_sec_per_km: avgPace,
-        calories: a.calories ? Math.round(a.calories) : null,
-        raw_data: a,
-      },
-      { onConflict: "user_id,source,external_id" },
-    );
-
+  // One batched upsert instead of a round trip per activity.
+  if (rows.length > 0) {
+    const { error: upsertError } = await getSupabaseAdmin()
+      .from("cardio_activities")
+      .upsert(rows, { onConflict: "user_id,source,external_id" });
     if (upsertError) {
-      console.error("Upsert error for activity", a.id, upsertError);
-      skipped++;
-    } else {
-      imported++;
+      console.error("Batch upsert failed:", upsertError.message);
+      return new Response(JSON.stringify({ error: "Saving activities failed" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
   }
 
   return new Response(
     JSON.stringify({
-      imported,
-      skipped,
+      imported: rows.length,
+      skipped: 0,
       total_fetched: activities.length,
       has_more: activities.length === perPage,
     }),
@@ -172,6 +216,7 @@ async function handleActivityDetail(body: {
   user_id: string;
   activity_id: string;
 }): Promise<Response> {
+  if (!ACTIVITY_ID.test(String(body.activity_id))) return badRequest("Invalid activity_id");
   const { token, error: tokenError } = await getValidToken(body.user_id);
   if (tokenError) {
     return new Response(JSON.stringify({ error: tokenError }), {
@@ -203,6 +248,13 @@ async function handleStreams(body: {
   activity_id: string;
   keys?: string;
 }): Promise<Response> {
+  if (!ACTIVITY_ID.test(String(body.activity_id))) return badRequest("Invalid activity_id");
+  const requestedKeys = (
+    body.keys ?? "heartrate,latlng,altitude,velocity_smooth,cadence,time,distance"
+  )
+    .split(",")
+    .map((k) => k.trim());
+  if (requestedKeys.some((k) => !ALLOWED_STREAM_KEYS.has(k))) return badRequest("Invalid keys");
   const { token, error: tokenError } = await getValidToken(body.user_id);
   if (tokenError) {
     return new Response(JSON.stringify({ error: tokenError }), {
@@ -211,9 +263,8 @@ async function handleStreams(body: {
     });
   }
 
-  const keys = body.keys ?? "heartrate,latlng,altitude,velocity_smooth,cadence,time,distance";
   const res = await fetch(
-    `https://www.strava.com/api/v3/activities/${body.activity_id}/streams?keys=${keys}&key_type=distance`,
+    `https://www.strava.com/api/v3/activities/${body.activity_id}/streams?keys=${requestedKeys.join(",")}&key_type=distance`,
     { headers: { Authorization: `Bearer ${token}` } },
   );
 

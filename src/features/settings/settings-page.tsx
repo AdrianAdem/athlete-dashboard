@@ -15,6 +15,16 @@ import { cn } from "@/lib/utils";
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
 
+// Reasons strava-auth puts into the redirect after a failed connect.
+const STRAVA_ERROR_MESSAGES: Record<string, string> = {
+  access_denied: "Strava-Zugriff wurde abgelehnt",
+  missing_scope: "Bitte Zugriff auf alle Aktivitäten erlauben",
+  wrong_account: "Das ist nicht das verknüpfte Strava-Konto",
+  invalid_state: "Login abgelaufen, bitte erneut verbinden",
+  token_exchange_failed: "Strava hat den Login nicht bestätigt",
+  save_failed: "Verbindung konnte nicht gespeichert werden",
+};
+
 export function SettingsPage() {
   const [searchParams] = useSearchParams();
   const [status, setStatus] = useState<SaveStatus>("idle");
@@ -70,7 +80,9 @@ export function SettingsPage() {
 
   // Strava status + callback handling
   useEffect(() => {
-    getStravaStatus().then(setStravaStatus);
+    getStravaStatus()
+      .then(setStravaStatus)
+      .catch(() => setStravaMsg("Strava-Status nicht erreichbar"));
     const today = new Date();
     const weekAgo = new Date();
     weekAgo.setDate(today.getDate() - 7);
@@ -86,19 +98,30 @@ export function SettingsPage() {
       .catch(() => {});
     const stravaParam = searchParams.get("strava");
     if (stravaParam === "connected") setStravaMsg("Strava erfolgreich verbunden!");
-    else if (stravaParam === "error") setStravaMsg("Strava-Verbindung fehlgeschlagen");
+    else if (stravaParam === "error") {
+      const reason = searchParams.get("reason") ?? "";
+      setStravaMsg(STRAVA_ERROR_MESSAGES[reason] ?? "Strava-Verbindung fehlgeschlagen");
+    }
   }, [searchParams]);
 
   const connectStrava = async () => {
     setStravaLoading(true);
-    const url = await getStravaAuthUrl();
-    window.location.href = url;
+    try {
+      window.location.href = await getStravaAuthUrl();
+    } catch (err) {
+      setStravaMsg((err as Error).message);
+      setStravaLoading(false);
+    }
   };
 
   const handleDisconnectStrava = async () => {
     setStravaLoading(true);
-    await disconnectStrava();
-    setStravaStatus({ connected: false, athlete_name: null, last_updated: null });
+    try {
+      await disconnectStrava();
+      setStravaStatus({ connected: false, athlete_name: null, last_updated: null });
+    } catch (err) {
+      setStravaMsg((err as Error).message);
+    }
     setStravaLoading(false);
   };
 
@@ -107,8 +130,8 @@ export function SettingsPage() {
     try {
       const result = await syncStravaActivities();
       setStravaMsg(`${result.imported} Aktivitäten synchronisiert`);
-    } catch {
-      setStravaMsg("Sync fehlgeschlagen");
+    } catch (err) {
+      setStravaMsg(`Sync fehlgeschlagen: ${(err as Error).message}`);
     }
     setStravaSyncing(false);
     setTimeout(() => setStravaMsg(null), 3000);
