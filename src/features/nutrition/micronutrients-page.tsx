@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { ChevronLeft } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { USER_ID } from "@/lib/constants";
 import { todayString } from "@/lib/utils";
@@ -84,17 +84,21 @@ const microFields: MicroField[] = [
 
 export function MicronutrientsPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  // Follow the day picked on the nutrition page; open directly → today.
+  const requested = searchParams.get("date");
+  const date = requested && /^\d{4}-\d{2}-\d{2}$/.test(requested) ? requested : todayString();
+  const isToday = date === todayString();
   const [values, setValues] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [foodCount, setFoodCount] = useState(0);
 
   const fetchData = useCallback(async () => {
-    // Fetch today's nutrition_log entries to auto-compute available micros
     const { data: logs } = await supabase
       .from("nutrition_log")
       .select("*")
       .eq("user_id", USER_ID)
-      .eq("date", todayString());
+      .eq("date", date);
 
     const entries = (logs ?? []) as NutritionLog[];
     setFoodCount(entries.length);
@@ -113,7 +117,7 @@ export function MicronutrientsPage() {
     }
     setValues(sums);
     setLoading(false);
-  }, []);
+  }, [date]);
 
   useEffect(() => {
     fetchData();
@@ -127,15 +131,22 @@ export function MicronutrientsPage() {
   return (
     <div className="space-y-4 p-4 pb-24">
       <div className="flex items-center gap-3">
-        <button onClick={() => navigate("/ernaehrung")} className="rounded-full bg-neutral-800 p-2">
+        <button
+          onClick={() => navigate("/ernaehrung")}
+          aria-label="Zurück zur Ernährung"
+          className="rounded-full bg-neutral-800 p-2"
+        >
           <ChevronLeft className="h-5 w-5" />
         </button>
         <h1 className="text-2xl font-bold">Mikronährstoffe</h1>
       </div>
 
       <p className="text-xs text-neutral-500">
-        Automatisch berechnet aus {foodCount} Einträgen heute. Balken zeigt % der empfohlenen
-        Tagesdosis (RDA).
+        Automatisch berechnet aus {foodCount} Einträgen{" "}
+        {isToday
+          ? "heute"
+          : `am ${new Date(`${date}T12:00:00`).toLocaleDateString("de-DE", { day: "numeric", month: "long" })}`}
+        . Balken zeigt % der empfohlenen Tagesdosis (RDA).
       </p>
 
       <div className="space-y-2">

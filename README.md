@@ -32,7 +32,7 @@ Fitness data is fragmented across vendor silos: strength logs in one app, runs i
 - **Training analytics** — estimated 1RM via the Brzycki formula, volume and max-weight trends per exercise, a 12-week training heatmap, and scored progress/consistency/intensity/volume metrics
 - **Routines** — recurring routines with weekday scheduling and date ranges, per-step completion tracking, swipe-to-delete
 - **Cardio** — Strava OAuth import plus manual entry, GPS live tracking on a Leaflet map with screen wake lock, and per-activity stream charts for pace, heart rate, and elevation
-- **Nutrition** — barcode scanning, FatSecret database search, LLM-parsed freetext entry, macro and micronutrient tracking against RDA targets, water logging
+- **Nutrition** — barcode scanning and product search via Open Food Facts, LLM-parsed freetext entry, macro and micronutrient tracking against RDA targets, water logging
 - **Wearable biometrics** — daily Garmin sync of resting heart rate, HRV, sleep stages and score, Body Battery, stress, VO2max, and steps
 - **Dashboard** — daily overview of calories, water, training status, routines, and the latest biometrics
 
@@ -66,7 +66,7 @@ Taken from demo mode, so the data shown is generated, not personal.
 
 **Frontend** — React 19, TypeScript, Vite, Tailwind CSS 4, Radix UI primitives, Recharts, Leaflet, React Router 7
 **Backend** — Supabase (Postgres with row-level security, Deno edge functions)
-**Integrations** — Garmin Connect, Strava, FatSecret, Anthropic Claude
+**Integrations** — Garmin Connect, Strava, Open Food Facts, Anthropic Claude
 **CI/CD** — GitHub Actions build and deploy to GitHub Pages
 
 <br>
@@ -92,7 +92,7 @@ flowchart TB
         SYNC["garmin-sync.mjs<br/>zero-dependency Node"]
     end
 
-    FS[FatSecret API]
+    FS[Open Food Facts]
     AN[Anthropic Claude]
     ST[Strava API]
     GA[Garmin Connect]
@@ -163,7 +163,6 @@ Set these in the Supabase dashboard under **Edge Functions → Secrets**, not in
 
 | Secret | Used by |
 | --- | --- |
-| `FATSECRET_CLIENT_ID` / `FATSECRET_CLIENT_SECRET` | `food-lookup` |
 | `ANTHROPIC_API_KEY` | `food-lookup` freetext parsing |
 | `STRAVA_CLIENT_ID` / `STRAVA_CLIENT_SECRET` / `STRAVA_REDIRECT_URI` | `strava-auth`, `strava-sync` |
 | `OWNER_USER_ID` (optional) | `strava-auth`, `strava-sync` — the only user id accepted |

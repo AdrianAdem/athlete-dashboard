@@ -493,7 +493,7 @@ function demoFood(
   };
 }
 
-/** Stands in for the FatSecret database when running in demo mode. */
+/** Stands in for the Open Food Facts database when running in demo mode. */
 export const demoFoodCatalogue = [
   demoFood("demo-food-1", "Haferflocken", "Kölln", 372, 13.5, 58.7, 7.0, 10.0),
   demoFood("demo-food-2", "Skyr Natur", "Arla", 64, 11.0, 4.0, 0.2, 0),

@@ -31,7 +31,7 @@ import {
   addRecentFood,
   getRecentFoods,
 } from "@/lib/food-service";
-import type { FoodSearchResult, FatSecretFood, AIFoodItem, RecentFood } from "@/lib/food-service";
+import type { FoodSearchResult, FoodProduct, AIFoodItem, RecentFood } from "@/lib/food-service";
 import type { NutritionLog, MealType, WaterLog } from "@/types/database";
 // Type-only: erased at compile time, so the library stays dynamically imported.
 import type { Html5Qrcode } from "html5-qrcode";
@@ -99,7 +99,7 @@ type TabType = MealType | "water";
 type QuantityUnit = "g" | "ml" | "stück";
 type AddMode = "search" | "barcode" | "ai" | null;
 
-// Micronutrients FatSecret provides, keyed to the nutrition_log columns.
+// Micronutrients the food database can provide, keyed to the nutrition_log columns.
 const ZERO_MICROS = {
   vitamin_a_mcg: 0,
   vitamin_c_mg: 0,
@@ -176,45 +176,64 @@ function BarcodeScanner({
   onClose: () => void;
 }) {
   const scannerRef = useRef<HTMLDivElement>(null);
-  const scannerInstance = useRef<Html5Qrcode | null>(null);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  // onScan is handed in fresh on every parent render; keep it in a ref so the
+  // camera is not torn down and restarted each time the parent re-renders.
+  const onScanRef = useRef(onScan);
+  useEffect(() => {
+    onScanRef.current = onScan;
+  }, [onScan]);
 
   useEffect(() => {
     let mounted = true;
+    let scanned = false;
+    let scanner: Html5Qrcode | null = null;
     (async () => {
       const { Html5Qrcode } = await import("html5-qrcode");
       if (!mounted || !scannerRef.current) return;
-      const scanner = new Html5Qrcode("barcode-reader");
-      scannerInstance.current = scanner;
+      scanner = new Html5Qrcode("barcode-reader");
       try {
         await scanner.start(
           { facingMode: "environment" },
           { fps: 10, qrbox: { width: 250, height: 150 } },
           (decodedText) => {
-            scanner.stop().catch(() => {});
-            onScan(decodedText);
+            // At 10 fps the callback can fire again before stop() lands.
+            if (scanned) return;
+            scanned = true;
+            scanner?.stop().catch(() => {});
+            onScanRef.current(decodedText);
           },
           () => {},
         );
-      } catch (err) {
-        console.error("Camera error:", err);
+        // Closed while the camera was still starting: stop it now, otherwise
+        // it keeps running with no component left to stop it.
+        if (!mounted) scanner.stop().catch(() => {});
+      } catch {
+        if (mounted)
+          setCameraError("Kamera nicht verfügbar. Zugriff in den Einstellungen erlauben.");
       }
     })();
     return () => {
       mounted = false;
-      scannerInstance.current?.stop().catch(() => {});
+      if (scanner?.isScanning) scanner.stop().catch(() => {});
     };
-  }, [onScan]);
+  }, []);
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <p className="text-sm font-medium">Barcode scannen</p>
-        <button onClick={onClose}>
+        <button onClick={onClose} aria-label="Scanner schließen">
           <X className="h-4 w-4 text-neutral-500" />
         </button>
       </div>
       <div ref={scannerRef} id="barcode-reader" className="overflow-hidden rounded-xl" />
-      <p className="text-center text-xs text-neutral-500">Halte den Barcode vor die Kamera</p>
+      <p
+        role={cameraError ? "alert" : undefined}
+        className={`text-center text-xs ${cameraError ? "text-red-400" : "text-neutral-500"}`}
+      >
+        {cameraError ?? "Halte den Barcode vor die Kamera"}
+      </p>
     </div>
   );
 }
@@ -303,6 +322,20 @@ export function NutritionWaterPage() {
   const [searchResults, setSearchResults] = useState<FoodSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // Monotonic ids: only the newest search / day load may write state, so a
+  // slow earlier response cannot overwrite a newer one.
+  const searchSeq = useRef(0);
+  const loadSeq = useRef(0);
+
+  // Short-lived message for failed writes and lookups.
+  const [notice, setNotice] = useState<string | null>(null);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const showNotice = (msg: string) => {
+    setNotice(msg);
+    clearTimeout(noticeTimer.current);
+    noticeTimer.current = setTimeout(() => setNotice(null), 4000);
+  };
+  const [saving, setSaving] = useState(false);
 
   // AI results state
   const [aiResults, setAiResults] = useState<AIFoodItem[]>([]);
@@ -316,12 +349,16 @@ export function NutritionWaterPage() {
   const [baseCarbs, setBaseCarbs] = useState(0);
   const [baseFat, setBaseFat] = useState(0);
   const [baseFiber, setBaseFiber] = useState(0);
-  // Micronutrients per 100g (only those FatSecret provides; 0 for manual/AI entries).
+  // Micronutrients per 100 g (0 where the food database has no value).
   const [baseMicros, setBaseMicros] = useState(ZERO_MICROS);
   const [barcode, setBarcode] = useState<string | null>(null);
   const [foodSource, setFoodSource] = useState<"barcode" | "search" | "ai" | "custom">("search");
+  // Base values are per 100 g, so pieces need a weight to be convertible.
+  const [pieceWeight, setPieceWeight] = useState(100);
 
-  const factor = quantityUnit === "stück" ? 1 : quantity / 100;
+  // Grams actually eaten; every nutrient scales from its per-100 g base by this.
+  const grams = quantityUnit === "stück" ? quantity * pieceWeight : quantity;
+  const factor = grams / 100;
   const liveCal = Math.round(baseCal * factor);
   const liveProt = Math.round(baseProt * factor * 10) / 10;
   const liveCarbs = Math.round(baseCarbs * factor * 10) / 10;
@@ -337,9 +374,18 @@ export function NutritionWaterPage() {
   const [calorieGoal, setCalorieGoal] = useState(2500);
   const [waterGoalMl, setWaterGoalMl] = useState(3000);
   const [bodyWeight, setBodyWeight] = useState(80);
+  const [macroGoals, setMacroGoals] = useState<{
+    protein: number | null;
+    carbs: number | null;
+    fat: number | null;
+  }>({ protein: null, carbs: null, fat: null });
 
   const fetchData = useCallback(async () => {
-    setLoading(true);
+    const seq = ++loadSeq.current;
+    // Never show the previous day's entries under the new date, not even
+    // briefly and not when this load fails.
+    setLogs([]);
+    setWaterLogs([]);
     const [nRes, wRes, profileRes] = await Promise.all([
       supabase
         .from("nutrition_log")
@@ -355,23 +401,35 @@ export function NutritionWaterPage() {
         .order("logged_at"),
       supabase
         .from("user_profiles")
-        .select("calorie_goal, water_goal_ml")
+        .select("calorie_goal, water_goal_ml, protein_goal, carbs_goal, fat_goal")
         .eq("id", USER_ID)
         .single(),
     ]);
-    if (nRes.data) setLogs(nRes.data as NutritionLog[]);
-    if (wRes.data) setWaterLogs(wRes.data as WaterLog[]);
-    if (profileRes.data) {
-      setCalorieGoal(profileRes.data.calorie_goal ?? 2500);
-      setWaterGoalMl(profileRes.data.water_goal_ml ?? 3000);
-    }
     const { data: wt } = await supabase
       .from("weight_log")
       .select("weight_kg")
       .eq("user_id", USER_ID)
       .order("date", { ascending: false })
       .limit(1)
-      .single();
+      .maybeSingle();
+    // The user switched day again while this load was in flight.
+    if (seq !== loadSeq.current) return;
+
+    if (nRes.error || wRes.error) showNotice("Daten konnten nicht geladen werden");
+    if (nRes.data) setLogs(nRes.data as NutritionLog[]);
+    if (wRes.data) setWaterLogs(wRes.data as WaterLog[]);
+    if (profileRes.data) {
+      const p = profileRes.data;
+      setCalorieGoal(p.calorie_goal ?? 2500);
+      setWaterGoalMl(p.water_goal_ml ?? 3000);
+      // Goals set in Einstellungen win; empty ones fall back to the formula.
+      const set = (v: number | null) => (v && v > 0 ? v : null);
+      setMacroGoals({
+        protein: set(p.protein_goal),
+        carbs: set(p.carbs_goal),
+        fat: set(p.fat_goal),
+      });
+    }
     if (wt) setBodyWeight(wt.weight_kg);
     setLoading(false);
   }, [selectedDate]);
@@ -380,47 +438,67 @@ export function NutritionWaterPage() {
     fetchData();
   }, [fetchData]);
 
-  const goals = calculateMacros(calorieGoal, bodyWeight);
+  const formulaGoals = calculateMacros(calorieGoal, bodyWeight);
+  const goals = {
+    calories: formulaGoals.calories,
+    protein: macroGoals.protein ?? formulaGoals.protein,
+    carbs: macroGoals.carbs ?? formulaGoals.carbs,
+    fat: macroGoals.fat ?? formulaGoals.fat,
+  };
 
-  // FatSecret search with custom_foods fallback
+  // A pending debounce or in-flight response must not refill the result list
+  // after the user already picked an item or closed the form.
+  const cancelPendingSearch = () => {
+    clearTimeout(debounceRef.current);
+    searchSeq.current++;
+    setSearching(false);
+  };
+
+  // Open Food Facts search plus the user's own saved foods
   const handleSearchChange = (value: string) => {
     setSearchQuery(value);
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
+      const seq = ++searchSeq.current;
       if (value.length < 2) {
         setSearchResults([]);
+        setSearching(false);
         return;
       }
       setSearching(true);
-      try {
-        const [fatSecretRes, customRes] = await Promise.all([
-          searchFoods(value).catch(() => ({ results: [], totalResults: 0 })),
-          supabase
-            .from("custom_foods")
-            .select("*")
-            .eq("user_id", USER_ID)
-            .ilike("name", `%${value}%`)
-            .limit(5)
-            .then(({ data }) => data ?? []),
-        ]);
+      const [productRes, customRes] = await Promise.allSettled([
+        searchFoods(value),
+        supabase
+          .from("custom_foods")
+          .select("*")
+          .eq("user_id", USER_ID)
+          .ilike("name", `%${value}%`)
+          .limit(5)
+          .then(({ data }) => data ?? []),
+      ]);
+      if (seq !== searchSeq.current) return;
 
-        // Custom foods as search results
-        const customResults: FoodSearchResult[] = (customRes as { name: string }[]).map((f, i) => ({
-          id: `custom_${i}`,
-          name: `★ ${f.name}`,
-          brand: "Eigene",
-          description: "",
-        }));
-
-        setSearchResults([...customResults, ...fatSecretRes.results]);
-      } catch {
-        setSearchResults([]);
-      }
+      const customResults: FoodSearchResult[] =
+        customRes.status === "fulfilled"
+          ? (customRes.value as { name: string }[]).map((f, i) => ({
+              id: `custom_${i}`,
+              name: `★ ${f.name}`,
+              brand: "Eigene",
+              description: "",
+            }))
+          : [];
+      if (productRes.status === "rejected")
+        showNotice("Lebensmittel-Suche gerade nicht erreichbar");
+      setSearchResults([
+        ...customResults,
+        ...(productRes.status === "fulfilled" ? productRes.value.results : []),
+      ]);
       setSearching(false);
-    }, 300);
+    }, 350);
   };
 
   const selectSearchResult = async (result: FoodSearchResult) => {
+    cancelPendingSearch();
     // Custom food
     if (result.id.startsWith("custom_")) {
       const name = result.name.replace(/^★\s*/, "");
@@ -439,26 +517,32 @@ export function NutritionWaterPage() {
         setBaseFiber(0);
         setBaseMicros(ZERO_MICROS);
         setFoodSource("custom");
-        setQuantityUnit(guessUnit(data.name));
-        setQuantity(100);
+        const unit = guessUnit(data.name);
+        setQuantityUnit(unit);
+        setQuantity(unit === "stück" ? 1 : 100);
       }
       setSearchQuery("");
       setSearchResults([]);
       return;
     }
 
-    // FatSecret food — fetch full details
+    // Database product — fetch full nutrient details
     try {
       const food = await getFoodDetails(result.id);
-      if (food) applyFatSecretFood(food, "search");
+      if (!food) {
+        showNotice("Für dieses Produkt fehlen Nährwerte");
+        return;
+      }
+      applyProduct(food, "search");
     } catch (err) {
-      console.error("Failed to get food details:", err);
+      showNotice((err as Error).message);
+      return;
     }
     setSearchQuery("");
     setSearchResults([]);
   };
 
-  const applyFatSecretFood = (food: FatSecretFood, source: "barcode" | "search") => {
+  const applyProduct = (food: FoodProduct, source: "barcode" | "search") => {
     setFoodName(food.brand ? `${food.name} (${food.brand})` : food.name);
     setFoodSource(source);
 
@@ -492,18 +576,15 @@ export function NutritionWaterPage() {
   const handleBarcodeScan = async (code: string) => {
     setAddMode("search");
     try {
-      const result = await lookupBarcode(code);
-      if (result.found && result.food) {
-        applyFatSecretFood(result.food, "barcode");
+      const product = await lookupBarcode(code);
+      if (product) {
+        applyProduct(product, "barcode");
         setBarcode(code);
       } else {
-        // Barcode not found — fall back to search with the code
-        setSearchQuery(code);
-        handleSearchChange(code);
+        showNotice("Barcode nicht gefunden. Produkt per Name suchen.");
       }
     } catch (err) {
-      console.error("Barcode lookup failed:", err);
-      setSearchQuery(code);
+      showNotice((err as Error).message);
     }
   };
 
@@ -534,17 +615,19 @@ export function NutritionWaterPage() {
     setBaseProt(recent.protein_100);
     setBaseCarbs(recent.carbs_100);
     setBaseFat(recent.fat_100);
-    setBaseFiber(0);
-    setBaseMicros(ZERO_MICROS);
+    setBaseFiber(recent.fiber_100 ?? 0);
+    setBaseMicros({ ...ZERO_MICROS, ...recent.micros_100 });
     setFoodSource(recent.source);
-    setQuantityUnit("g");
+    setQuantityUnit(recent.unit ?? "g");
     setQuantity(100);
     setAddMode("search");
   };
 
   const addEntry = async () => {
-    if (!foodName.trim() || activeTab === "water") return;
-    const { data } = await supabase
+    if (!foodName.trim() || activeTab === "water" || saving) return;
+    // Lock against double taps on slow connections, which created duplicates.
+    setSaving(true);
+    const { data, error } = await supabase
       .from("nutrition_log")
       .insert({
         user_id: USER_ID,
@@ -557,30 +640,34 @@ export function NutritionWaterPage() {
         carbs_g: liveCarbs,
         fat_g: liveFat,
         fiber_g: liveFiber,
-        quantity_g: quantity,
+        quantity_g: Math.round(grams),
         ...scaleMicros(),
       })
       .select()
       .single();
-    if (data) {
-      setLogs((prev) => [...prev, data as NutritionLog]);
-      // Save to recent foods
-      addRecentFood({
-        name: foodName.trim().replace(/^★\s*/, ""),
-        calories_100: baseCal,
-        protein_100: baseProt,
-        carbs_100: baseCarbs,
-        fat_100: baseFat,
-        source: foodSource,
-        lastUsed: Date.now(),
-      });
-      resetForm();
+    setSaving(false);
+    if (error || !data) {
+      showNotice("Speichern fehlgeschlagen. Verbindung prüfen.");
+      return;
     }
+    setLogs((prev) => [...prev, data as NutritionLog]);
+    addRecentFood({
+      name: foodName.trim().replace(/^★\s*/, ""),
+      calories_100: baseCal,
+      protein_100: baseProt,
+      carbs_100: baseCarbs,
+      fat_100: baseFat,
+      fiber_100: baseFiber,
+      micros_100: baseMicros,
+      unit: quantityUnit === "ml" ? "ml" : "g",
+      source: foodSource,
+    });
+    resetForm();
   };
 
   const saveCustomFood = async () => {
     if (!foodName.trim() || baseCal === 0) return;
-    await supabase.from("custom_foods").upsert(
+    const { error } = await supabase.from("custom_foods").upsert(
       {
         user_id: USER_ID,
         name: foodName.trim().replace(/^★\s*/, ""),
@@ -591,9 +678,11 @@ export function NutritionWaterPage() {
       },
       { onConflict: "user_id,name" },
     );
+    showNotice(error ? "Speichern fehlgeschlagen" : "Als eigenes Lebensmittel gespeichert");
   };
 
   const resetForm = () => {
+    cancelPendingSearch();
     setFoodName("");
     setBarcode(null);
     setBaseCal(0);
@@ -604,6 +693,7 @@ export function NutritionWaterPage() {
     setBaseMicros(ZERO_MICROS);
     setQuantity(100);
     setQuantityUnit("g");
+    setPieceWeight(100);
     setShowAddForm(false);
     setAddMode(null);
     setSearchQuery("");
@@ -612,23 +702,44 @@ export function NutritionWaterPage() {
     setFoodSource("search");
   };
 
+  // Optimistic removal, restored if the server rejects it, so an offline
+  // delete no longer looks done and then reappears on the next visit.
   const deleteEntry = async (id: string) => {
+    const removed = logs.find((l) => l.id === id);
     setLogs((prev) => prev.filter((l) => l.id !== id));
-    await supabase.from("nutrition_log").delete().eq("id", id);
+    const { error } = await supabase.from("nutrition_log").delete().eq("id", id);
+    if (error && removed) {
+      // Put back only this entry, so a parallel successful delete stays gone.
+      setLogs((prev) =>
+        [...prev, removed].sort((a, b) => a.created_at.localeCompare(b.created_at)),
+      );
+      showNotice("Löschen fehlgeschlagen");
+    }
   };
 
   const addWater = async (amount: number) => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("water_log")
       .insert({ user_id: USER_ID, date: selectedDate, amount_ml: amount })
       .select()
       .single();
-    if (data) setWaterLogs((prev) => [...prev, data as WaterLog]);
+    if (error || !data) {
+      showNotice("Wasser konnte nicht gespeichert werden");
+      return;
+    }
+    setWaterLogs((prev) => [...prev, data as WaterLog]);
   };
 
   const deleteWater = async (id: string) => {
+    const removed = waterLogs.find((w) => w.id === id);
     setWaterLogs((prev) => prev.filter((w) => w.id !== id));
-    await supabase.from("water_log").delete().eq("id", id);
+    const { error } = await supabase.from("water_log").delete().eq("id", id);
+    if (error && removed) {
+      setWaterLogs((prev) =>
+        [...prev, removed].sort((a, b) => a.logged_at.localeCompare(b.logged_at)),
+      );
+      showNotice("Löschen fehlgeschlagen");
+    }
   };
 
   const totals = logs.reduce(
@@ -653,12 +764,20 @@ export function NutritionWaterPage() {
 
   return (
     <div className="space-y-4 p-4 pb-32">
+      {notice && (
+        <p
+          role="status"
+          className="fixed inset-x-4 top-[calc(env(safe-area-inset-top,0px)+12px)] z-50 rounded-xl bg-neutral-800 px-4 py-3 text-center text-sm text-white shadow-lg"
+        >
+          {notice}
+        </p>
+      )}
       {/* Hero card — centered ring with Gegessen / Übrig / Wasser */}
       <div className="rounded-2xl bg-card p-5">
         <div className="flex items-center justify-between mb-1">
           <h1 className="text-lg font-bold">Ernährung</h1>
           <button
-            onClick={() => navigate("/ernaehrung/mikro")}
+            onClick={() => navigate(`/ernaehrung/mikro?date=${selectedDate}`)}
             className="flex items-center gap-1.5 rounded-lg bg-neutral-800 px-2.5 py-1.5 transition-all active:scale-95"
           >
             <Pill className="h-3.5 w-3.5 text-emerald-400" />
@@ -1052,7 +1171,17 @@ export function NutritionWaterPage() {
                       {(["g", "ml", "stück"] as QuantityUnit[]).map((u) => (
                         <button
                           key={u}
-                          onClick={() => setQuantityUnit(u)}
+                          onClick={() => {
+                            // "100 Stück" is never what was meant when switching.
+                            // Switching to pieces: the current amount becomes one
+                            // piece, so a 45 g portion stays 45 g instead of 100.
+                            if (u === "stück" && quantityUnit !== "stück") {
+                              setPieceWeight(grams);
+                              setQuantity(1);
+                            }
+                            if (u !== "stück" && quantityUnit === "stück") setQuantity(grams);
+                            setQuantityUnit(u);
+                          }}
                           className={`rounded-lg px-3 py-2 text-xs font-medium ${
                             quantityUnit === u
                               ? "bg-white text-black"
@@ -1064,10 +1193,22 @@ export function NutritionWaterPage() {
                       ))}
                     </div>
                   </div>
+                  {quantityUnit === "stück" && (
+                    <label className="flex items-center justify-between gap-3 text-xs text-neutral-400">
+                      Gewicht pro Stück (g)
+                      <Input
+                        type="number"
+                        inputMode="decimal"
+                        value={pieceWeight || ""}
+                        onChange={(e) => setPieceWeight(Number(e.target.value))}
+                        className="w-24 bg-neutral-800 border-none"
+                      />
+                    </label>
+                  )}
                   <div className="grid grid-cols-4 gap-2">
                     <div className="space-y-1">
                       <label className="text-[10px] text-neutral-500">
-                        kcal/100{quantityUnit === "stück" ? "St" : quantityUnit}
+                        kcal/100{quantityUnit === "ml" ? "ml" : "g"}
                       </label>
                       <Input
                         type="number"
@@ -1110,8 +1251,10 @@ export function NutritionWaterPage() {
                   {baseCal > 0 && (
                     <div className="flex items-center justify-between rounded-lg bg-neutral-800/60 px-3 py-2 text-xs">
                       <span className="text-neutral-400">
-                        {quantity}
-                        {quantityUnit === "stück" ? " St" : quantityUnit} =
+                        {quantityUnit === "stück"
+                          ? `${quantity} St (${Math.round(grams)} g)`
+                          : `${quantity}${quantityUnit}`}{" "}
+                        =
                       </span>
                       <span className="font-medium text-orange-400">{liveCal} kcal</span>
                       <span className="text-green-400">P {liveProt}g</span>
@@ -1122,10 +1265,10 @@ export function NutritionWaterPage() {
                   <div className="flex gap-2">
                     <button
                       onClick={addEntry}
-                      disabled={!foodName.trim()}
+                      disabled={!foodName.trim() || saving || grams <= 0}
                       className="flex-1 rounded-xl bg-white py-2.5 text-sm font-semibold text-black disabled:opacity-30 active:scale-[0.98]"
                     >
-                      Hinzufügen
+                      {saving ? "Speichert..." : "Hinzufügen"}
                     </button>
                     <button
                       onClick={saveCustomFood}

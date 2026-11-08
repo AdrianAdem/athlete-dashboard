@@ -11,7 +11,7 @@ import {
   syncStravaActivities,
 } from "@/lib/strava-service";
 import { getGarminData } from "@/lib/garmin-service";
-import { cn } from "@/lib/utils";
+import { cn, todayString } from "@/lib/utils";
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
 
@@ -48,10 +48,13 @@ export function SettingsPage() {
   const [heightCm, setHeightCm] = useState(0);
   const [birthDate, setBirthDate] = useState("");
   const [calorieGoal, setCalorieGoal] = useState(2500);
-  const [proteinGoal, setProteinGoal] = useState(150);
-  const [carbsGoal, setCarbsGoal] = useState(250);
-  const [fatGoal, setFatGoal] = useState(80);
+  // null = automatic (derived from calorie goal and body weight)
+  const [proteinGoal, setProteinGoal] = useState<number | null>(null);
+  const [carbsGoal, setCarbsGoal] = useState<number | null>(null);
+  const [fatGoal, setFatGoal] = useState<number | null>(null);
   const [waterGoal, setWaterGoal] = useState(3000);
+  const [exporting, setExporting] = useState(false);
+  const [exportMsg, setExportMsg] = useState<string | null>(null);
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -152,9 +155,10 @@ export function SettingsPage() {
         height_cm: heightCm || null,
         birth_date: birthDate || null,
         calorie_goal: calorieGoal,
-        protein_goal: proteinGoal,
-        carbs_goal: carbsGoal,
-        fat_goal: fatGoal,
+        // 0 means the same as empty: let the formula decide.
+        protein_goal: proteinGoal || null,
+        carbs_goal: carbsGoal || null,
+        fat_goal: fatGoal || null,
         water_goal_ml: waterGoal,
       })
       .eq("id", USER_ID);
@@ -170,32 +174,92 @@ export function SettingsPage() {
     setTimeout(() => setStatus("idle"), 2000);
   };
 
+  // Full backup of everything the user owns. The earlier list missed routines,
+  // cardio, custom foods, the profile and Garmin data, so the "backup" silently
+  // lacked them.
   const exportData = async () => {
-    const tables = [
-      "daily_todos",
-      "sport_todos",
-      "training_plans",
-      "training_exercises",
-      "training_logs",
-      "nutrition_log",
-      "water_log",
-      "weight_log",
-      "weekly_reports",
-    ];
+    setExporting(true);
+    setExportMsg(null);
+    try {
+      const byUser = [
+        "user_profiles",
+        "daily_todos",
+        "sport_todos",
+        "training_plans",
+        "training_exercises",
+        "training_logs",
+        "nutrition_log",
+        "water_log",
+        "weight_log",
+        "weekly_reports",
+        "routines",
+        "routine_logs",
+        "cardio_activities",
+        "cardio_goals",
+        "custom_foods",
+        "garmin_health_data",
+        // Legacy table the app no longer writes, still holding data.
+        "micronutrient_log",
+      ];
+      const allData: Record<string, unknown[]> = {};
+      for (const table of byUser) {
+        // user_profiles is keyed by id; training_exercises hangs off plans.
+        const query =
+          table === "user_profiles"
+            ? supabase.from(table).select("*").eq("id", USER_ID)
+            : table === "training_exercises"
+              ? supabase
+                  .from(table)
+                  .select("*")
+                  .in(
+                    "plan_id",
+                    ((allData.training_plans ?? []) as { id: string }[]).map((p) => p.id),
+                  )
+              : supabase.from(table).select("*").eq("user_id", USER_ID);
+        const { data, error } = await query;
+        if (error) throw new Error(`${table}: ${error.message}`);
+        allData[table] = data ?? [];
+      }
+      // routine_items has no user_id; it belongs to the exported routines.
+      const routineIds = (allData.routines as { id: string }[]).map((r) => r.id);
+      const { data: items, error: itemsError } = await supabase
+        .from("routine_items")
+        .select("*")
+        .in("routine_id", routineIds);
+      if (itemsError) throw new Error(`routine_items: ${itemsError.message}`);
+      allData.routine_items = items ?? [];
 
-    const allData: Record<string, unknown[]> = {};
-    for (const table of tables) {
-      const { data } = await supabase.from(table).select("*").eq("user_id", USER_ID);
-      allData[table] = data ?? [];
+      const fileName = `athlete-dashboard-export-${todayString()}.json`;
+      const file = new File([JSON.stringify(allData, null, 2)], fileName, {
+        type: "application/json",
+      });
+      const download = () => {
+        const url = URL.createObjectURL(file);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = fileName;
+        a.click();
+        // Revoking immediately can cancel the download in Safari.
+        setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      };
+      // The share sheet ("In Dateien sichern") is the reliable save path in an
+      // installed iOS web app. Safari refuses share() once the tap that
+      // started the export is "used up" by the slow loading above
+      // (NotAllowedError); fall back to a plain download then.
+      if (navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: "Athlete Dashboard Export" });
+        } catch (err) {
+          if ((err as Error).name === "NotAllowedError") download();
+          else if ((err as Error).name !== "AbortError") throw err;
+        }
+      } else {
+        download();
+      }
+    } catch (err) {
+      setExportMsg(`Export fehlgeschlagen: ${(err as Error).message}`);
     }
-
-    const blob = new Blob([JSON.stringify(allData, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `athlete-dashboard-export-${new Date().toISOString().split("T")[0]}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    setExporting(false);
   };
 
   return (
@@ -225,11 +289,12 @@ export function SettingsPage() {
           </div>
           <div className="space-y-1">
             <label className="text-xs text-neutral-500">Geburtsdatum</label>
+            {/* Native date picker yields ISO dates; free text in "TT.MM.JJJJ" was
+                rejected by the DATE column and took the goal edits down with it. */}
             <Input
-              type="text"
+              type="date"
               value={birthDate}
               onChange={(e) => setBirthDate(e.target.value)}
-              placeholder="TT.MM.JJJJ"
               className="bg-neutral-800 border-none"
             />
           </div>
@@ -239,6 +304,9 @@ export function SettingsPage() {
       {/* Daily goals */}
       <div className="rounded-xl bg-card p-4 space-y-4">
         <p className="text-sm font-medium text-neutral-400">Tagesziele</p>
+        <p className="text-xs text-neutral-600">
+          Makros leer lassen = automatisch aus Kalorienziel und Körpergewicht.
+        </p>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1">
             <label className="text-xs text-neutral-500">Kalorien (kcal)</label>
@@ -253,8 +321,9 @@ export function SettingsPage() {
             <label className="text-xs text-neutral-500">Protein (g)</label>
             <Input
               type="number"
-              value={proteinGoal}
-              onChange={(e) => setProteinGoal(Number(e.target.value))}
+              value={proteinGoal ?? ""}
+              onChange={(e) => setProteinGoal(e.target.value ? Number(e.target.value) : null)}
+              placeholder="Auto"
               className="bg-neutral-800 border-none"
             />
           </div>
@@ -262,8 +331,9 @@ export function SettingsPage() {
             <label className="text-xs text-neutral-500">Kohlenhydrate (g)</label>
             <Input
               type="number"
-              value={carbsGoal}
-              onChange={(e) => setCarbsGoal(Number(e.target.value))}
+              value={carbsGoal ?? ""}
+              onChange={(e) => setCarbsGoal(e.target.value ? Number(e.target.value) : null)}
+              placeholder="Auto"
               className="bg-neutral-800 border-none"
             />
           </div>
@@ -271,8 +341,9 @@ export function SettingsPage() {
             <label className="text-xs text-neutral-500">Fett (g)</label>
             <Input
               type="number"
-              value={fatGoal}
-              onChange={(e) => setFatGoal(Number(e.target.value))}
+              value={fatGoal ?? ""}
+              onChange={(e) => setFatGoal(e.target.value ? Number(e.target.value) : null)}
+              placeholder="Auto"
               className="bg-neutral-800 border-none"
             />
           </div>
@@ -408,10 +479,16 @@ export function SettingsPage() {
       {/* Export */}
       <button
         onClick={exportData}
-        className="flex w-full items-center justify-center gap-2 rounded-xl bg-neutral-800 py-3 text-sm font-medium text-neutral-300 transition-all active:scale-[0.98]"
+        disabled={exporting}
+        className="flex w-full items-center justify-center gap-2 rounded-xl bg-neutral-800 py-3 text-sm font-medium text-neutral-300 transition-all active:scale-[0.98] disabled:opacity-50"
       >
-        <Download className="h-4 w-4" /> Daten exportieren
+        <Download className="h-4 w-4" /> {exporting ? "Exportiert..." : "Daten exportieren"}
       </button>
+      {exportMsg && (
+        <p role="alert" className="text-center text-xs text-red-400">
+          {exportMsg}
+        </p>
+      )}
     </div>
   );
 }
