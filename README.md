@@ -166,6 +166,8 @@ Set these in the Supabase dashboard under **Edge Functions → Secrets**, not in
 | `FATSECRET_CLIENT_ID` / `FATSECRET_CLIENT_SECRET` | `food-lookup` |
 | `ANTHROPIC_API_KEY` | `food-lookup` freetext parsing |
 | `STRAVA_CLIENT_ID` / `STRAVA_CLIENT_SECRET` / `STRAVA_REDIRECT_URI` | `strava-auth`, `strava-sync` |
+| `OWNER_USER_ID` (optional) | `strava-auth`, `strava-sync` — the only user id accepted |
+| `STRAVA_OWNER_ATHLETE_ID` (optional) | `strava-auth` — the only Strava athlete allowed to connect |
 
 ### Deployment
 
