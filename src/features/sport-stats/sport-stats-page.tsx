@@ -206,6 +206,42 @@ export function SportStatsPage() {
     }
   };
 
+  const fetchExerciseStrength = async (exerciseId: string) => {
+    setSelectedExercise(exerciseId);
+    const { data: logs } = await supabase
+      .from("training_logs")
+      .select("*")
+      .eq("exercise_id", exerciseId)
+      .eq("user_id", USER_ID)
+      .order("date");
+
+    if (logs) {
+      setStrengthData(
+        (logs as TrainingLog[]).map((log) => {
+          const sets = log.sets_completed as SetLog[];
+          const maxWeight = Math.max(...sets.map((s) => s.weight_kg), 0);
+          const bestSet = sets.reduce(
+            (best, s) => (s.weight_kg > best.weight_kg ? s : best),
+            sets[0] ?? { weight_kg: 0, reps: 0 },
+          );
+          // Brzycki formula for estimated 1RM
+          const e1rm =
+            bestSet && bestSet.reps > 0
+              ? Math.round(bestSet.weight_kg * (36 / (37 - bestSet.reps)))
+              : maxWeight;
+          return {
+            date: new Date(log.date).toLocaleDateString("de-DE", {
+              day: "2-digit",
+              month: "2-digit",
+            }),
+            maxWeight,
+            estimated1RM: e1rm,
+          };
+        }),
+      );
+    }
+  };
+
   const fetchStats = useCallback(async () => {
     const daysBack = getDaysBack();
     const since = new Date();
@@ -324,42 +360,6 @@ export function SportStatsPage() {
   useEffect(() => {
     fetchStats();
   }, [fetchStats]);
-
-  const fetchExerciseStrength = async (exerciseId: string) => {
-    setSelectedExercise(exerciseId);
-    const { data: logs } = await supabase
-      .from("training_logs")
-      .select("*")
-      .eq("exercise_id", exerciseId)
-      .eq("user_id", USER_ID)
-      .order("date");
-
-    if (logs) {
-      setStrengthData(
-        (logs as TrainingLog[]).map((log) => {
-          const sets = log.sets_completed as SetLog[];
-          const maxWeight = Math.max(...sets.map((s) => s.weight_kg), 0);
-          const bestSet = sets.reduce(
-            (best, s) => (s.weight_kg > best.weight_kg ? s : best),
-            sets[0] ?? { weight_kg: 0, reps: 0 },
-          );
-          // Brzycki formula for estimated 1RM
-          const e1rm =
-            bestSet && bestSet.reps > 0
-              ? Math.round(bestSet.weight_kg * (36 / (37 - bestSet.reps)))
-              : maxWeight;
-          return {
-            date: new Date(log.date).toLocaleDateString("de-DE", {
-              day: "2-digit",
-              month: "2-digit",
-            }),
-            maxWeight,
-            estimated1RM: e1rm,
-          };
-        }),
-      );
-    }
-  };
 
   const selectedEx = exercises.find((e) => e.id === selectedExercise);
   const improvement =

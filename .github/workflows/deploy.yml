@@ -1,7 +1,11 @@
 name: Deploy to GitHub Pages
 
+# Deploy only after CI passed on main. Before, both workflows ran in parallel
+# on every push, so a build with failing tests went live anyway.
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
 
 permissions:
@@ -15,12 +19,16 @@ concurrency:
 
 jobs:
   build-and-deploy:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The commit CI actually tested, not whatever main points to now.
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - uses: actions/setup-node@v4
         with:

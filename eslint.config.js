@@ -25,6 +25,13 @@ export default defineConfig([
         "error",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
+      // Every page loads its data in an effect and sets state from the result,
+      // which this rule flags. Rewriting all of them is a data-layer refactor,
+      // not a fix; keep it visible as a warning so new code can avoid it.
+      "react-hooks/set-state-in-effect": "warn",
+      // Fast-refresh hint only (a file exporting a component plus a hook or
+      // variants still works, it just reloads fully). Not a correctness issue.
+      "react-refresh/only-export-components": "warn",
     },
   },
   {
