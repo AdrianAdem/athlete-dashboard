@@ -28,6 +28,7 @@ dist-ssr
 .env*.local
 .env.production
 scripts/.garmin-tokens.json
+scripts/.garmin-consumer.json
 
 # Python (helper scripts / notebooks)
 venv/

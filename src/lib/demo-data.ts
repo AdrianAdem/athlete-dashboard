@@ -5,12 +5,13 @@
 // not a real recorded route.
 
 import { USER_ID } from "./constants";
+import { toLocalDateString } from "./utils";
 
 const DAY = 86_400_000;
 
 /** YYYY-MM-DD, `daysAgo` days before today. */
 function day(daysAgo: number): string {
-  return new Date(Date.now() - daysAgo * DAY).toISOString().slice(0, 10);
+  return toLocalDateString(new Date(Date.now() - daysAgo * DAY));
 }
 
 function iso(daysAgo: number, hour = 12, minute = 0): string {
@@ -130,6 +131,7 @@ export const demoTrainingExercises = exerciseDefs.map((e, i) => ({
   day_label: e.day,
   order_index: i,
   rest_seconds: 120,
+  is_active: true,
 }));
 
 // Twelve weeks of logs on a Mon/Wed/Fri rhythm with a slow upward load trend,

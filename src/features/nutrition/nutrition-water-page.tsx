@@ -20,7 +20,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { USER_ID } from "@/lib/constants";
-import { todayString } from "@/lib/utils";
+import { todayString, toLocalDateString } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { calculateMacros } from "@/lib/macro-calc";
 import {
@@ -294,7 +294,7 @@ function AIFreitext({
 function shiftDate(dateStr: string, days: number): string {
   const d = new Date(dateStr + "T12:00:00");
   d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  return toLocalDateString(d);
 }
 
 function formatDateLabel(dateStr: string): string {

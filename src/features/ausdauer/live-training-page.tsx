@@ -10,9 +10,19 @@ import { CARTO_DARK_TILES } from "./ausdauer-utils";
 interface GpsPoint {
   lat: number;
   lng: number;
-  alt: number;
+  alt: number | null; // iOS often reports no altitude
   time: number; // ms timestamp
 }
+
+// Faster than this between two fixes is a GPS jump, not movement (~90 km/h,
+// above any run or normal ride). Speed-based instead of a fixed distance cap,
+// which threw away whole stretches after a gap or at cycling speed.
+const MAX_SPEED_MS = 25;
+// Below this a new fix is jitter while standing still.
+const MIN_STEP_M = 2;
+// Altitude noise is several metres; only count a climb once it exceeds this
+// above the last low point, otherwise every wobble adds elevation.
+const CLIMB_THRESHOLD_M = 3;
 
 interface Lap {
   km: number;
@@ -108,6 +118,11 @@ export function LiveTrainingPage() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastLapDist = useRef(0);
   const lastLapTime = useRef(0);
+  // GPS callbacks are registered once; they read the live state from refs.
+  const stateRef = useRef<TrainingState>("ready");
+  // After a pause the track restarts: no distance across the gap.
+  const segmentBreak = useRef(false);
+  const altAnchor = useRef<number | null>(null);
 
   // Map refs
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -172,17 +187,35 @@ export function LiveTrainingPage() {
     const pt: GpsPoint = {
       lat: pos.coords.latitude,
       lng: pos.coords.longitude,
-      alt: pos.coords.altitude ?? 0,
+      alt: pos.coords.altitude,
       time: pos.timestamp,
     };
-
-    const prev = points.current[points.current.length - 1];
-    points.current.push(pt);
-
-    // Update map
     const latLng: L.LatLngExpression = [pt.lat, pt.lng];
-    polylineRef.current?.addLatLng(latLng);
     posMarkerRef.current?.setLatLng(latLng);
+
+    // Paused: show where we are, but record nothing. The watch keeps running
+    // so resuming is instant; it just must not count the walk to the car.
+    if (stateRef.current !== "running") return;
+
+    const prev = segmentBreak.current ? undefined : points.current[points.current.length - 1];
+    if (prev) {
+      const d = haversine(prev, pt);
+      const dt = (pt.time - prev.time) / 1000;
+      if (d < MIN_STEP_M) return;
+      if (dt > 0 && d / dt > MAX_SPEED_MS) return;
+    }
+
+    if (segmentBreak.current && points.current.length > 0) {
+      // Start a new line after a pause instead of bridging the gap.
+      polylineRef.current = L.polyline([], {
+        color: "oklch(0.75 0.18 30)",
+        weight: 4,
+        opacity: 0.9,
+      }).addTo(mapRef.current!);
+      segmentBreak.current = false;
+    }
+    points.current.push(pt);
+    polylineRef.current?.addLatLng(latLng);
     mapRef.current?.panTo(latLng);
 
     if (points.current.length === 1) {
@@ -197,18 +230,19 @@ export function LiveTrainingPage() {
       }).addTo(mapRef.current!);
     }
 
-    if (!prev) return;
-
-    const d = haversine(prev, pt);
-    // Filter GPS noise: ignore jumps > 50m in one update or < 1m
-    if (d > 50 || d < 1) return;
-
-    setDistance((prev) => prev + d);
-
-    // Elevation gain
-    if (pt.alt > prev.alt) {
-      setElevation((e) => e + (pt.alt - prev.alt));
+    if (pt.alt != null) {
+      if (altAnchor.current == null || pt.alt < altAnchor.current) {
+        altAnchor.current = pt.alt;
+      } else if (pt.alt - altAnchor.current >= CLIMB_THRESHOLD_M) {
+        const climb = pt.alt - altAnchor.current;
+        setElevation((e) => e + climb);
+        altAnchor.current = pt.alt;
+      }
     }
+
+    if (!prev) return;
+    const d = haversine(prev, pt);
+    setDistance((total) => total + d);
 
     // Current pace from last 5 points
     const recent = points.current.slice(-6);
@@ -222,8 +256,21 @@ export function LiveTrainingPage() {
     }
   }, []);
 
+  // Keep the screen awake. iOS drops the lock whenever the screen is locked or
+  // the app goes to the background, and it never comes back on its own.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && stateRef.current === "running") {
+        void requestWakeLock();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [requestWakeLock]);
+
   // Start training
   const start = useCallback(() => {
+    stateRef.current = "running";
     setState("running");
     startTime.current = Date.now();
     totalPaused.current = 0;
@@ -245,6 +292,7 @@ export function LiveTrainingPage() {
 
   // Pause
   const pause = useCallback(() => {
+    stateRef.current = "paused";
     setState("paused");
     pausedAt.current = Date.now();
     if (timerRef.current) clearInterval(timerRef.current);
@@ -252,6 +300,9 @@ export function LiveTrainingPage() {
 
   // Resume
   const resume = useCallback(() => {
+    stateRef.current = "running";
+    segmentBreak.current = true;
+    altAnchor.current = null;
     setState("running");
     totalPaused.current += Date.now() - pausedAt.current;
 
@@ -262,6 +313,7 @@ export function LiveTrainingPage() {
 
   // Stop
   const stop = useCallback(() => {
+    stateRef.current = "finished";
     setState("finished");
     if (watchId.current != null) navigator.geolocation.clearWatch(watchId.current);
     if (timerRef.current) clearInterval(timerRef.current);
@@ -278,8 +330,13 @@ export function LiveTrainingPage() {
         weight: 0,
       }).addTo(mapRef.current);
       // Fit to route
-      if (polylineRef.current && points.current.length > 1) {
-        mapRef.current.fitBounds(polylineRef.current.getBounds(), { padding: [30, 30] });
+      // Bounds of every recorded point: after a pause the route spans several
+      // polylines, and the last one alone would crop the map.
+      if (points.current.length > 1) {
+        mapRef.current.fitBounds(
+          L.latLngBounds(points.current.map((p) => [p.lat, p.lng] as [number, number])),
+          { padding: [30, 30] },
+        );
       }
     }
   }, [releaseWakeLock]);
@@ -380,7 +437,7 @@ export function LiveTrainingPage() {
       </div>
 
       {/* Stats + controls — bottom half */}
-      <div className="shrink-0 bg-neutral-950 px-4 pt-4 pb-6 safe-area-bottom">
+      <div className="shrink-0 bg-neutral-950 px-4 pt-4 pb-[calc(env(safe-area-inset-bottom,0px)+1.5rem)]">
         {/* Live stats */}
         {(isActive || state === "finished") && (
           <div className="grid grid-cols-2 gap-3 mb-4">

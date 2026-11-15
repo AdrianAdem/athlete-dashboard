@@ -60,6 +60,7 @@ export interface TrainingExercise {
   day_label: string;
   order_index: number;
   rest_seconds: number | null;
+  is_active?: boolean; // false = archived (removed from plan, history kept)
 }
 
 export interface SetLog {

@@ -53,6 +53,7 @@ export function TrainingPlanPage() {
         .from("training_exercises")
         .select("*")
         .eq("plan_id", first.id)
+        .eq("is_active", true)
         .order("order_index");
       if (exs) setExercises(exs as TrainingExercise[]);
     }
@@ -65,6 +66,7 @@ export function TrainingPlanPage() {
       .from("training_exercises")
       .select("*")
       .eq("plan_id", plan.id)
+      .eq("is_active", true)
       .order("order_index");
     if (exs) setExercises(exs as TrainingExercise[]);
     else setExercises([]);
@@ -149,9 +151,24 @@ export function TrainingPlanPage() {
     }
   };
 
-  const deleteExercise = async (id: string) => {
-    setExercises((prev) => prev.filter((e) => e.id !== id));
-    await supabase.from("training_exercises").delete().eq("id", id);
+  // Exercises and plans are archived, never hard-deleted: training_logs
+  // cascade on delete, so one stray tap used to wipe the whole history of an
+  // exercise (1RM chart, "Vorher" values, stats).
+  const deleteExercise = async (ex: TrainingExercise) => {
+    if (
+      !window.confirm(`„${ex.name}“ aus dem Plan entfernen? Die Trainingshistorie bleibt erhalten.`)
+    )
+      return;
+    const before = exercises;
+    setExercises((prev) => prev.filter((e) => e.id !== ex.id));
+    const { error } = await supabase
+      .from("training_exercises")
+      .update({ is_active: false })
+      .eq("id", ex.id);
+    if (error) {
+      setExercises(before);
+      alert("Entfernen fehlgeschlagen. Verbindung prüfen.");
+    }
   };
 
   // Drag reorder
@@ -159,8 +176,12 @@ export function TrainingPlanPage() {
   const dragOverItem = useRef<string | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
 
+  // Order at drag start, so the drop only writes when something really moved.
+  const orderAtDragStart = useRef<string>("");
+
   const handleDragStart = (id: string) => {
     dragItem.current = id;
+    orderAtDragStart.current = exercises.map((e) => e.id).join(",");
     setDragId(id);
   };
 
@@ -180,9 +201,11 @@ export function TrainingPlanPage() {
   };
 
   const handleDragEnd = async () => {
+    const wasDragging = dragItem.current !== null;
     setDragId(null);
     dragItem.current = null;
     dragOverItem.current = null;
+    if (!wasDragging || exercises.map((e) => e.id).join(",") === orderAtDragStart.current) return;
 
     const updates = exercises.map((ex, idx) => ({
       id: ex.id,
@@ -200,8 +223,7 @@ export function TrainingPlanPage() {
   const touchCurrentEl = useRef<string | null>(null);
 
   const handleTouchStart = (id: string, e: React.TouchEvent) => {
-    dragItem.current = id;
-    setDragId(id);
+    handleDragStart(id);
     touchStartY.current = e.touches[0].clientY;
     touchCurrentEl.current = id;
   };
@@ -226,7 +248,21 @@ export function TrainingPlanPage() {
 
   const deletePlan = async () => {
     if (!activePlan) return;
-    await supabase.from("training_plans").delete().eq("id", activePlan.id);
+    if (
+      !window.confirm(
+        `Plan „${activePlan.name}“ archivieren? Die Trainingshistorie bleibt erhalten.`,
+      )
+    )
+      return;
+    // Same state a plan gets when a newer one is created: hidden, data kept.
+    const { error } = await supabase
+      .from("training_plans")
+      .update({ is_active: false })
+      .eq("id", activePlan.id);
+    if (error) {
+      alert("Archivieren fehlgeschlagen. Verbindung prüfen.");
+      return;
+    }
     const remaining = plans.filter((p) => p.id !== activePlan.id);
     setPlans(remaining);
     if (remaining.length > 0) {
@@ -435,7 +471,11 @@ export function TrainingPlanPage() {
                   {exercises.length} Übungen · {dayLabels.length} Tage
                 </p>
               </div>
-              <button onClick={deletePlan} className="text-xs text-neutral-600 hover:text-red-500">
+              <button
+                onClick={deletePlan}
+                aria-label="Plan archivieren"
+                className="text-xs text-neutral-600 hover:text-red-500"
+              >
                 <Trash2 className="h-4 w-4" />
               </button>
             </div>
@@ -456,14 +496,18 @@ export function TrainingPlanPage() {
                   onDragEnter={() => handleDragEnter(ex.id)}
                   onDragEnd={handleDragEnd}
                   onDragOver={(e) => e.preventDefault()}
-                  onTouchStart={(e) => handleTouchStart(ex.id, e)}
-                  onTouchMove={handleTouchMove}
-                  onTouchEnd={handleTouchEnd}
                   className={`flex items-center gap-3 rounded-xl bg-card p-3 transition-all ${
                     dragId === ex.id ? "opacity-50 scale-95" : ""
                   }`}
                 >
-                  <div className="cursor-grab touch-none text-neutral-600 active:text-neutral-400">
+                  {/* Touch drag lives on the handle only; on the whole card every
+                      scroll or tap started a "drag" and rewrote every order_index. */}
+                  <div
+                    onTouchStart={(e) => handleTouchStart(ex.id, e)}
+                    onTouchMove={handleTouchMove}
+                    onTouchEnd={handleTouchEnd}
+                    className="cursor-grab touch-none p-1 text-neutral-600 active:text-neutral-400"
+                  >
                     <GripVertical className="h-5 w-5" />
                   </div>
                   <div className="flex-1">
@@ -474,8 +518,9 @@ export function TrainingPlanPage() {
                     </p>
                   </div>
                   <button
-                    onClick={() => deleteExercise(ex.id)}
-                    className="text-neutral-600 hover:text-red-500"
+                    onClick={() => deleteExercise(ex)}
+                    aria-label={`${ex.name} entfernen`}
+                    className="p-1 text-neutral-600 hover:text-red-500"
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>

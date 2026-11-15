@@ -5,6 +5,7 @@ import {
   useRef,
   useEffect,
   useCallback,
+  useMemo,
   type ReactNode,
 } from "react";
 import { supabase } from "@/lib/supabase";
@@ -19,7 +20,8 @@ interface WorkoutSet extends SetLog {
 interface WorkoutExercise extends TrainingExercise {
   sets_data: WorkoutSet[];
   previous_log: SetLog[] | null;
-  saved: boolean;
+  /** training_logs row of this session once saved; later saves update it. */
+  log_id: string | null;
 }
 
 interface WorkoutSummary {
@@ -41,6 +43,7 @@ interface WorkoutContextType {
   summary: WorkoutSummary | null;
   dayLabel: string;
   workoutStartTime: Date | null;
+  saveError: string | null;
   setExercises: React.Dispatch<React.SetStateAction<WorkoutExercise[]>>;
   setCurrentExIdx: React.Dispatch<React.SetStateAction<number>>;
   setRestDuration: React.Dispatch<React.SetStateAction<number>>;
@@ -53,10 +56,11 @@ interface WorkoutContextType {
   startRestTimer: () => void;
   skipTimer: () => void;
   adjustTimer: (delta: number) => void;
-  saveExercise: (exIdx: number) => Promise<void>;
+  saveExercise: (exIdx: number) => Promise<boolean>;
   goToNextExercise: () => void;
   goToPrevExercise: () => void;
-  finishWorkout: () => Promise<void>;
+  /** Saves every exercise; resolves false (and keeps the workout) on failure. */
+  finishWorkout: () => Promise<boolean>;
   closeSummary: () => void;
 }
 
@@ -70,18 +74,77 @@ export function useWorkout() {
 
 const DEFAULT_REST = 180;
 
+// iOS kills a backgrounded PWA freely (switching to music or the camera during
+// a rest is enough). The running workout is mirrored here so it survives that.
+const STORAGE_KEY = "active_workout_v1";
+
+interface StoredWorkout {
+  exercises: WorkoutExercise[];
+  currentExIdx: number;
+  dayLabel: string;
+  restDuration: number;
+  startedAt: string;
+}
+
+function loadStoredWorkout(): StoredWorkout | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const stored = JSON.parse(raw) as StoredWorkout;
+    return Array.isArray(stored.exercises) && stored.exercises.length > 0 ? stored : null;
+  } catch {
+    return null;
+  }
+}
+
+function completedSets(ex: WorkoutExercise): SetLog[] {
+  return ex.sets_data.filter((s) => s.completed).map(({ completed: _, ...s }) => s);
+}
+
 export function WorkoutProvider({ children }: { children: ReactNode }) {
-  const [workoutActive, setWorkoutActive] = useState(false);
-  const [exercises, setExercises] = useState<WorkoutExercise[]>([]);
-  const [currentExIdx, setCurrentExIdx] = useState(0);
-  const [dayLabel, setDayLabel] = useState("");
+  const [restored] = useState(loadStoredWorkout);
+  const [workoutActive, setWorkoutActive] = useState(!!restored);
+  const [exercises, setExercises] = useState<WorkoutExercise[]>(restored?.exercises ?? []);
+  const [currentExIdx, setCurrentExIdx] = useState(restored?.currentExIdx ?? 0);
+  const [dayLabel, setDayLabel] = useState(restored?.dayLabel ?? "");
   const [restTimer, setRestTimer] = useState(0);
-  const [restDuration, setRestDuration] = useState(DEFAULT_REST);
+  const [restDuration, setRestDuration] = useState(restored?.restDuration ?? DEFAULT_REST);
   const [timerActive, setTimerActive] = useState(false);
+  const [startedAt, setStartedAt] = useState<Date | null>(
+    restored ? new Date(restored.startedAt) : null,
+  );
+  const [saveError, setSaveError] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval>>(undefined);
   const restEndTime = useRef<number>(0);
-  const workoutStart = useRef<Date | null>(null);
   const [summary, setSummary] = useState<WorkoutSummary | null>(null);
+
+  // Always-current view of the exercises for async save chains, which would
+  // otherwise act on the state captured when they were scheduled.
+  const exercisesRef = useRef(exercises);
+  useEffect(() => {
+    exercisesRef.current = exercises;
+  }, [exercises]);
+
+  // One save chain per exercise: a second save waits for the first, so a quick
+  // "Weiter" followed by "Beenden" can no longer insert the same log twice.
+  const saveChains = useRef(new Map<string, Promise<boolean>>());
+
+  useEffect(() => {
+    if (!workoutActive || !startedAt) return;
+    try {
+      const stored: StoredWorkout = {
+        exercises,
+        currentExIdx,
+        dayLabel,
+        restDuration,
+        startedAt: startedAt.toISOString(),
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+    } catch {
+      // Storage full or blocked: the workout still runs, it just cannot be
+      // restored after a reload.
+    }
+  }, [workoutActive, exercises, currentExIdx, dayLabel, restDuration, startedAt]);
 
   useEffect(() => {
     if (!timerActive) return;
@@ -98,13 +161,13 @@ export function WorkoutProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(timerRef.current);
   }, [timerActive]);
 
+  // restDuration is the single source: it starts at the exercise's own rest
+  // time on every exercise change, and a manual adjustment overrides it.
   const startRestTimer = useCallback(() => {
-    const ex = exercises[currentExIdx];
-    const duration = ex?.rest_seconds ?? restDuration;
-    restEndTime.current = Date.now() + duration * 1000;
-    setRestTimer(duration);
+    restEndTime.current = Date.now() + restDuration * 1000;
+    setRestTimer(restDuration);
     setTimerActive(true);
-  }, [restDuration, exercises, currentExIdx]);
+  }, [restDuration]);
 
   const skipTimer = useCallback(() => {
     clearInterval(timerRef.current);
@@ -119,6 +182,7 @@ export function WorkoutProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const startWorkout = useCallback(async (day: string) => {
+    setSaveError(null);
     const { data: plans } = await supabase
       .from("training_plans")
       .select("id")
@@ -131,6 +195,7 @@ export function WorkoutProvider({ children }: { children: ReactNode }) {
       .select("*")
       .in("plan_id", planIds)
       .eq("day_label", day)
+      .eq("is_active", true)
       .order("order_index");
     if (!exs) return;
 
@@ -143,7 +208,7 @@ export function WorkoutProvider({ children }: { children: ReactNode }) {
           .eq("user_id", USER_ID)
           .order("date", { ascending: false })
           .limit(1)
-          .single();
+          .maybeSingle();
         const prevSets = prevLog ? (prevLog.sets_completed as SetLog[]) : null;
         return {
           ...ex,
@@ -154,20 +219,17 @@ export function WorkoutProvider({ children }: { children: ReactNode }) {
             completed: false,
           })),
           previous_log: prevSets,
-          saved: false,
+          log_id: null,
         };
       }),
     );
+    saveChains.current.clear();
     setExercises(exercisesWithPrev);
     setCurrentExIdx(0);
-    if (exercisesWithPrev[0]?.rest_seconds) {
-      setRestDuration(exercisesWithPrev[0].rest_seconds);
-    } else {
-      setRestDuration(DEFAULT_REST);
-    }
+    setRestDuration(exercisesWithPrev[0]?.rest_seconds ?? DEFAULT_REST);
     setDayLabel(day);
+    setStartedAt(new Date());
     setWorkoutActive(true);
-    workoutStart.current = new Date();
   }, []);
 
   const updateSet = useCallback(
@@ -190,17 +252,19 @@ export function WorkoutProvider({ children }: { children: ReactNode }) {
 
   const toggleSetComplete = useCallback(
     (exIdx: number, setIdx: number) => {
+      const set = exercisesRef.current[exIdx]?.sets_data[setIdx];
+      if (set && !set.completed) startRestTimer();
       setExercises((prev) =>
-        prev.map((ex, i) => {
-          if (i !== exIdx) return ex;
-          const newSets = ex.sets_data.map((s, j) => {
-            if (j !== setIdx) return s;
-            const nowCompleted = !s.completed;
-            if (nowCompleted) startRestTimer();
-            return { ...s, completed: nowCompleted };
-          });
-          return { ...ex, sets_data: newSets };
-        }),
+        prev.map((ex, i) =>
+          i === exIdx
+            ? {
+                ...ex,
+                sets_data: ex.sets_data.map((s, j) =>
+                  j === setIdx ? { ...s, completed: !s.completed } : s,
+                ),
+              }
+            : ex,
+        ),
       );
     },
     [startRestTimer],
@@ -241,74 +305,101 @@ export function WorkoutProvider({ children }: { children: ReactNode }) {
     );
   }, []);
 
+  // Writes the exercise's completed sets: insert once, update afterwards, so
+  // sets added after an earlier save are no longer dropped.
+  const persistExercise = useCallback((exerciseId: string): Promise<boolean> => {
+    const previous = saveChains.current.get(exerciseId) ?? Promise.resolve(true);
+    const next = previous.then(async () => {
+      const ex = exercisesRef.current.find((e) => e.id === exerciseId);
+      if (!ex) return true;
+      const sets = completedSets(ex);
+      if (sets.length === 0 && !ex.log_id) return true;
+
+      if (ex.log_id) {
+        const { error } = await supabase
+          .from("training_logs")
+          .update({ sets_completed: sets })
+          .eq("id", ex.log_id);
+        return !error;
+      }
+      const { data, error } = await supabase
+        .from("training_logs")
+        .insert({
+          exercise_id: ex.id,
+          user_id: USER_ID,
+          date: todayString(),
+          sets_completed: sets,
+        })
+        .select("id")
+        .single();
+      if (error || !data) return false;
+      // Write the id into the ref too, so a chained save right behind this one
+      // updates instead of inserting a second row.
+      exercisesRef.current = exercisesRef.current.map((e) =>
+        e.id === exerciseId ? { ...e, log_id: data.id } : e,
+      );
+      setExercises((prev) =>
+        prev.map((e) => (e.id === exerciseId ? { ...e, log_id: data.id } : e)),
+      );
+      return true;
+    });
+    saveChains.current.set(exerciseId, next);
+    return next;
+  }, []);
+
   const saveExercise = useCallback(
     async (exIdx: number) => {
-      const ex = exercises[exIdx];
-      const completedSets = ex.sets_data.filter((s) => s.completed);
-      if (completedSets.length === 0) return;
-
-      await supabase.from("training_logs").insert({
-        exercise_id: ex.id,
-        user_id: USER_ID,
-        date: todayString(),
-        sets_completed: completedSets.map(({ completed: _, ...s }) => s),
-      });
-      setExercises((prev) => prev.map((e, i) => (i === exIdx ? { ...e, saved: true } : e)));
+      const ex = exercisesRef.current[exIdx];
+      if (!ex) return true;
+      const ok = await persistExercise(ex.id);
+      if (!ok)
+        setSaveError("Übung konnte nicht gespeichert werden. Wird beim Beenden erneut versucht.");
+      return ok;
     },
-    [exercises],
+    [persistExercise],
   );
 
   const goToNextExercise = useCallback(() => {
-    const current = exercises[currentExIdx];
-    if (current && !current.saved && current.sets_data.every((s) => s.completed)) {
-      saveExercise(currentExIdx);
+    const current = exercisesRef.current[currentExIdx];
+    if (current && current.sets_data.some((s) => s.completed)) {
+      void saveExercise(currentExIdx);
     }
-    if (currentExIdx < exercises.length - 1) {
+    if (currentExIdx < exercisesRef.current.length - 1) {
       const nextIdx = currentExIdx + 1;
       setCurrentExIdx(nextIdx);
-      const nextEx = exercises[nextIdx];
-      if (nextEx?.rest_seconds) setRestDuration(nextEx.rest_seconds);
+      setRestDuration(exercisesRef.current[nextIdx]?.rest_seconds ?? DEFAULT_REST);
     }
-  }, [exercises, currentExIdx, saveExercise]);
+  }, [currentExIdx, saveExercise]);
 
   const goToPrevExercise = useCallback(() => {
     if (currentExIdx > 0) {
       const prevIdx = currentExIdx - 1;
       setCurrentExIdx(prevIdx);
-      const prevEx = exercises[prevIdx];
-      if (prevEx?.rest_seconds) setRestDuration(prevEx.rest_seconds);
+      setRestDuration(exercisesRef.current[prevIdx]?.rest_seconds ?? DEFAULT_REST);
     }
-  }, [currentExIdx, exercises]);
+  }, [currentExIdx]);
 
   const finishWorkout = useCallback(async () => {
-    for (let i = 0; i < exercises.length; i++) {
-      const ex = exercises[i];
-      if (!ex.saved && ex.sets_data.some((s) => s.completed)) {
-        await supabase.from("training_logs").insert({
-          exercise_id: ex.id,
-          user_id: USER_ID,
-          date: todayString(),
-          sets_completed: ex.sets_data
-            .filter((s) => s.completed)
-            .map(({ completed: _, ...s }) => s),
-        });
-      }
+    setSaveError(null);
+    const all = exercisesRef.current;
+    const results = await Promise.all(all.map((ex) => persistExercise(ex.id)));
+    if (results.some((ok) => !ok)) {
+      // Keep everything in place so nothing is lost; the user can retry.
+      setSaveError("Speichern fehlgeschlagen. Verbindung prüfen und erneut beenden.");
+      return false;
     }
 
-    const duration = workoutStart.current
-      ? Math.round((Date.now() - workoutStart.current.getTime()) / 60000)
-      : 0;
-
+    const duration = startedAt ? Math.round((Date.now() - startedAt.getTime()) / 60000) : 0;
     let totalSets = 0;
     let totalWeight = 0;
     let records = 0;
 
-    const exSummaries = exercises.map((ex) => {
-      const completed = ex.sets_data.filter((s) => s.completed);
-      totalSets += completed.length;
-      totalWeight += completed.reduce((s, set) => s + set.weight_kg * set.reps, 0);
+    const exSummaries = all.map((ex) => {
+      const done = ex.sets_data.filter((s) => s.completed);
+      totalSets += done.length;
+      totalWeight += done.reduce((s, set) => s + set.weight_kg * set.reps, 0);
 
-      const currentMax = Math.max(...completed.map((s) => s.weight_kg), 0);
+      const currentMax = Math.max(...done.map((s) => s.weight_kg), 0);
       const prevMax = ex.previous_log ? Math.max(...ex.previous_log.map((s) => s.weight_kg), 0) : 0;
       const isPR = prevMax > 0 && currentMax > prevMax;
       const improvement = prevMax > 0 ? ((currentMax - prevMax) / prevMax) * 100 : 0;
@@ -329,44 +420,78 @@ export function WorkoutProvider({ children }: { children: ReactNode }) {
     setWorkoutActive(false);
     setExercises([]);
     setDayLabel("");
-  }, [exercises, dayLabel, skipTimer]);
+    setStartedAt(null);
+    saveChains.current.clear();
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // Nothing to clean up if storage is unavailable.
+    }
+    return true;
+  }, [dayLabel, startedAt, skipTimer, persistExercise]);
 
   const closeSummary = useCallback(() => {
     setSummary(null);
   }, []);
 
-  return (
-    <WorkoutContext.Provider
-      value={{
-        workoutActive,
-        exercises,
-        currentExIdx,
-        restTimer,
-        restDuration,
-        timerActive,
-        summary,
-        dayLabel,
-        workoutStartTime: workoutStart.current,
-        setExercises,
-        setCurrentExIdx,
-        setRestDuration,
-        setDayLabel,
-        startWorkout,
-        updateSet,
-        toggleSetComplete,
-        addSet,
-        removeSet,
-        startRestTimer,
-        skipTimer,
-        adjustTimer,
-        saveExercise,
-        goToNextExercise,
-        goToPrevExercise,
-        finishWorkout,
-        closeSummary,
-      }}
-    >
-      {children}
-    </WorkoutContext.Provider>
+  // Memoised: the rest timer ticks twice a second, and an inline object would
+  // re-render every consumer on each tick even when they ignore the timer.
+  const value = useMemo<WorkoutContextType>(
+    () => ({
+      workoutActive,
+      exercises,
+      currentExIdx,
+      restTimer,
+      restDuration,
+      timerActive,
+      summary,
+      dayLabel,
+      workoutStartTime: startedAt,
+      saveError,
+      setExercises,
+      setCurrentExIdx,
+      setRestDuration,
+      setDayLabel,
+      startWorkout,
+      updateSet,
+      toggleSetComplete,
+      addSet,
+      removeSet,
+      startRestTimer,
+      skipTimer,
+      adjustTimer,
+      saveExercise,
+      goToNextExercise,
+      goToPrevExercise,
+      finishWorkout,
+      closeSummary,
+    }),
+    [
+      workoutActive,
+      exercises,
+      currentExIdx,
+      restTimer,
+      restDuration,
+      timerActive,
+      summary,
+      dayLabel,
+      startedAt,
+      saveError,
+      startWorkout,
+      updateSet,
+      toggleSetComplete,
+      addSet,
+      removeSet,
+      startRestTimer,
+      skipTimer,
+      adjustTimer,
+      saveExercise,
+      goToNextExercise,
+      goToPrevExercise,
+      finishWorkout,
+      closeSummary,
+    ],
   );
+
+  return <WorkoutContext.Provider value={value}>{children}</WorkoutContext.Provider>;
 }

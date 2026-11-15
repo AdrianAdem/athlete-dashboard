@@ -12,7 +12,7 @@ import {
 } from "recharts";
 import { supabase } from "@/lib/supabase";
 import { USER_ID } from "@/lib/constants";
-import { todayString } from "@/lib/utils";
+import { todayString, toLocalDateString } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -54,7 +54,7 @@ export function WeightPage() {
       .from("weight_log")
       .select("*")
       .eq("user_id", USER_ID)
-      .gte("date", since.toISOString().split("T")[0])
+      .gte("date", toLocalDateString(since))
       .order("date", { ascending: true });
     if (data) setLogs(data as WeightLog[]);
     setLoading(false);

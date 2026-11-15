@@ -11,7 +11,7 @@ import {
   syncStravaActivities,
 } from "@/lib/strava-service";
 import { getGarminData } from "@/lib/garmin-service";
-import { cn, todayString } from "@/lib/utils";
+import { cn, todayString, toLocalDateString } from "@/lib/utils";
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
 
@@ -89,7 +89,7 @@ export function SettingsPage() {
     const today = new Date();
     const weekAgo = new Date();
     weekAgo.setDate(today.getDate() - 7);
-    const fmt = (d: Date) => d.toISOString().split("T")[0];
+    const fmt = (d: Date) => toLocalDateString(d);
     getGarminData(fmt(weekAgo), fmt(today))
       .then((entries) => {
         const latest = entries

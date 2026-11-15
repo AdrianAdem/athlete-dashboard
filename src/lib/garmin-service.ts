@@ -73,6 +73,9 @@ export interface GarminHealthData {
   hrv?: GarminHRV;
   stress?: GarminStress;
   vo2max?: GarminVO2Max;
+  // When the watch last uploaded to Garmin Connect (ISO, local time); set by
+  // the sync script so the app can tell "no data" from "watch not syncing".
+  device_last_sync?: string | null;
 }
 
 export interface GarminHealthEntry {

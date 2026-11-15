@@ -688,7 +688,7 @@ export function AusdauerPage() {
           onClick={() => setShowStartMenu(false)}
         >
           <div
-            className="w-full max-w-md rounded-t-2xl bg-neutral-900 p-5 pb-8 safe-area-bottom"
+            className="w-full max-w-md rounded-t-2xl bg-neutral-900 p-5 pb-[calc(env(safe-area-inset-bottom,0px)+2rem)]"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-4">

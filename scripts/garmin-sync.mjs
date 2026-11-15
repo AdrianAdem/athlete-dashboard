@@ -15,7 +15,7 @@
 //   VITE_SUPABASE_URL  (or SUPABASE_URL)
 //   SUPABASE_SERVICE_ROLE_KEY
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { webcrypto } from "node:crypto";
@@ -47,6 +47,13 @@ const GARMIN_PASSWORD = process.env.GARMIN_PASSWORD;
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL ?? process.env.SUPABASE_URL;
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const USER_ID = "00000000-0000-0000-0000-000000000001";
+
+// Every request gets a timeout. launchd does not start a new run while the
+// previous one is still alive, so one hung request stalled the sync for good.
+const REQUEST_TIMEOUT_MS = 20_000;
+function fetchT(url, init = {}) {
+  return fetch(url, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+}
 
 function requireEnv() {
   const missing = [];
@@ -121,7 +128,7 @@ async function oauth1Header(method, baseUrl, reqParams, cc, token = "", tokenSec
 async function exchangeOAuth2(cc, oauth1Token, oauth1Secret) {
   const exUrl = `${OAUTH_SERVICE}/exchange/user/2.0`;
   const exHeader = await oauth1Header("POST", exUrl, {}, cc, oauth1Token, oauth1Secret);
-  const res = await fetch(exUrl, {
+  const res = await fetchT(exUrl, {
     method: "POST",
     headers: {
       Authorization: exHeader,
@@ -130,7 +137,11 @@ async function exchangeOAuth2(cc, oauth1Token, oauth1Secret) {
     },
     body: "",
   });
-  if (!res.ok) throw new Error(`OAuth2-Exchange fehlgeschlagen: ${res.status} ${await res.text()}`);
+  if (!res.ok) {
+    const err = new Error(`OAuth2-Exchange fehlgeschlagen: ${res.status} ${await res.text()}`);
+    err.status = res.status;
+    throw err;
+  }
   return res.json();
 }
 
@@ -173,8 +184,12 @@ async function getAccessToken() {
         oauth1_secret: cached.oauth1_secret,
       });
       return o2.access_token;
-    } catch {
-      // Refresh failed (revoked/expired) — fall through to full login.
+    } catch (err) {
+      // Only a rejected OAuth1 token justifies a password login. A network
+      // error must not trigger one: repeated SSO logins every 30 minutes are
+      // what gets a Garmin account captcha'd or locked.
+      if (err.status !== 401 && err.status !== 403) throw err;
+      console.log("OAuth1-Token abgelehnt, neuer Login nötig.");
     }
   }
 
@@ -189,8 +204,23 @@ async function getAccessToken() {
   return o2.access_token;
 }
 
+// The consumer key pair is the same for every garth-style client and rarely
+// changes. Cache it, so the sync does not depend on that S3 bucket being up.
+const CONSUMER_FILE = join(dirname(fileURLToPath(import.meta.url)), ".garmin-consumer.json");
+
 async function getConsumerCredentials() {
-  return (await fetch(CONSUMER_URL)).json();
+  try {
+    const cached = JSON.parse(readFileSync(CONSUMER_FILE, "utf8"));
+    if (cached.consumer_key && cached.consumer_secret) return cached;
+  } catch {
+    // Not cached yet.
+  }
+  const res = await fetchT(CONSUMER_URL);
+  if (!res.ok) throw new Error(`Consumer-Credentials nicht abrufbar: ${res.status}`);
+  const cc = await res.json();
+  if (!cc.consumer_key || !cc.consumer_secret) throw new Error("Consumer-Credentials ungültig");
+  writeFileSync(CONSUMER_FILE, JSON.stringify(cc), { mode: 0o600 });
+  return cc;
 }
 
 async function fullLogin(cc) {
@@ -205,7 +235,7 @@ async function fullLogin(cc) {
   const cookieHeader = () => [...jar].map(([k, v]) => `${k}=${v}`).join("; ");
 
   const embedUrl = `${SSO_EMBED}?${new URLSearchParams({ id: "gauth-widget", embedWidget: "true", gauthHost: SSO })}`;
-  let res = await fetch(embedUrl, { headers: { "User-Agent": BROWSER_UA } });
+  let res = await fetchT(embedUrl, { headers: { "User-Agent": BROWSER_UA } });
   absorb(res);
   await res.text();
 
@@ -218,14 +248,14 @@ async function fullLogin(cc) {
     redirectAfterAccountLoginUrl: SSO_EMBED,
     redirectAfterAccountCreationUrl: SSO_EMBED,
   })}`;
-  res = await fetch(signinUrl, {
+  res = await fetchT(signinUrl, {
     headers: { "User-Agent": BROWSER_UA, Referer: embedUrl, Cookie: cookieHeader() },
   });
   absorb(res);
   const csrf = (await res.text()).match(/name="_csrf"\s+value="([^"]+)"/)?.[1];
   if (!csrf) throw new Error(`Login-Seite blockiert (status ${res.status}) — kein CSRF`);
 
-  res = await fetch(signinUrl, {
+  res = await fetchT(signinUrl, {
     method: "POST",
     headers: {
       "User-Agent": BROWSER_UA,
@@ -246,7 +276,7 @@ async function fullLogin(cc) {
 
   const preParams = { ticket, "login-url": SSO_EMBED, "accepts-mfa-tokens": "true" };
   const preHeader = await oauth1Header("GET", `${OAUTH_SERVICE}/preauthorized`, preParams, cc);
-  res = await fetch(`${OAUTH_SERVICE}/preauthorized?${new URLSearchParams(preParams)}`, {
+  res = await fetchT(`${OAUTH_SERVICE}/preauthorized?${new URLSearchParams(preParams)}`, {
     headers: { Authorization: preHeader, "User-Agent": MOBILE_UA },
   });
   if (!res.ok) throw new Error(`OAuth1 fehlgeschlagen: ${res.status} ${await res.text()}`);
@@ -259,7 +289,7 @@ async function fullLogin(cc) {
 
 // ── Garmin data fetch ───────────────────────────────────────────────
 async function garminGet(path, token) {
-  const res = await fetch(`${CONNECT_BASE}/${path}`, {
+  const res = await fetchT(`${CONNECT_BASE}/${path}`, {
     headers: {
       Authorization: `Bearer ${token}`,
       "User-Agent": MOBILE_UA,
@@ -367,9 +397,25 @@ function buildResult(date, [dailyStats, sleep, heartRate, hrv, stress, vo2max]) 
   return result;
 }
 
-// ── Supabase upsert (service role bypasses RLS) ─────────────────────
+// ── Supabase (service role bypasses RLS) ───────────────────────────
+const supabaseHeaders = () => ({
+  apikey: SERVICE_ROLE,
+  Authorization: `Bearer ${SERVICE_ROLE}`,
+  "Content-Type": "application/json",
+});
+
+async function loadExisting(date) {
+  const res = await fetchT(
+    `${SUPABASE_URL}/rest/v1/garmin_health_data?user_id=eq.${USER_ID}&date=eq.${date}&select=data`,
+    { headers: supabaseHeaders() },
+  );
+  if (!res.ok) throw new Error(`Supabase read ${date}: ${res.status}`);
+  const rows = await res.json();
+  return rows[0]?.data ?? {};
+}
+
 async function upsert(date, data) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/garmin_health_data?on_conflict=user_id,date`, {
+  const res = await fetchT(`${SUPABASE_URL}/rest/v1/garmin_health_data?on_conflict=user_id,date`, {
     method: "POST",
     headers: {
       apikey: SERVICE_ROLE,
@@ -382,17 +428,49 @@ async function upsert(date, data) {
   if (!res.ok) throw new Error(`Supabase upsert ${date}: ${res.status} ${await res.text()}`);
 }
 
+// Local calendar date. toISOString() is UTC, so between midnight and 1–2 am
+// German time "today" would still be yesterday.
 function fmt(d) {
-  return d.toISOString().split("T")[0];
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+// launchd appends to the log forever; keep the newest part once it grows big.
+const LOG_FILE = join(dirname(fileURLToPath(import.meta.url)), "..", "logs", "garmin-sync.log");
+const LOG_MAX_BYTES = 2_000_000;
+const LOG_KEEP_BYTES = 500_000;
+function rotateLog() {
+  try {
+    if (statSync(LOG_FILE).size <= LOG_MAX_BYTES) return;
+    const tail = readFileSync(LOG_FILE).subarray(-LOG_KEEP_BYTES);
+    writeFileSync(LOG_FILE, tail);
+  } catch {
+    // No log file (manual run): nothing to rotate.
+  }
+}
+
+function hasMeasurements(daily) {
+  return !!daily && (daily.steps != null || daily.resting_hr != null);
 }
 
 async function main() {
   requireEnv();
+  rotateLog();
   const days = Math.max(1, Math.min(31, parseInt(process.argv[2] ?? "7", 10) || 7));
 
   const token = await getAccessToken();
   const displayName = await getDisplayName(token);
-  console.log("Verbunden. Sync " + days + " Tage...");
+  // When the watch last uploaded to Garmin Connect. Stored with every day so
+  // the app can say "Uhr seit … nicht synchronisiert" instead of showing dashes.
+  const syncTs = await garminGet("wellness-service/wellness/syncTimestamp", token).catch(
+    () => null,
+  );
+  const deviceLastSync = typeof syncTs === "string" ? syncTs : null;
+  console.log(
+    `Verbunden. Sync ${days} Tage... (Uhr zuletzt synchronisiert: ${deviceLastSync ?? "?"})`,
+  );
 
   let ok = 0;
   for (let i = 0; i < days; i++) {
@@ -417,9 +495,22 @@ async function main() {
       const failed = parts.filter((p) => p.status === "rejected").map((p) => p.reason.message);
       if (failed.length) console.error(`  ${date}: ${failed.join(", ")}`);
       const result = buildResult(date, parts);
-      await upsert(date, result);
-      const steps = result.daily?.steps ?? "—";
-      console.log(`  ${date}: ok (Schritte: ${steps})`);
+      // Merge into what is stored: an endpoint that failed this run (a 503,
+      // say) leaves its old block in place instead of wiping it. And a day
+      // that already has real measurements is not overwritten by an empty
+      // block from a run where the watch had not uploaded yet.
+      const existing = await loadExisting(date);
+      const merged = { ...existing, ...result, device_last_sync: deviceLastSync };
+      if (hasMeasurements(existing.daily) && !hasMeasurements(result.daily)) {
+        merged.daily = existing.daily;
+        merged.stress = existing.stress;
+      }
+      await upsert(date, merged);
+      if (hasMeasurements(merged.daily)) {
+        console.log(`  ${date}: ok (Schritte: ${merged.daily.steps ?? "—"})`);
+      } else {
+        console.log(`  ${date}: keine Messwerte (Uhr nicht synchronisiert?)`);
+      }
       ok++;
     } catch (err) {
       console.error(`  ${date}: ${err.message}`);

@@ -48,6 +48,7 @@ export function TrainingLogPage() {
       .from("training_exercises")
       .select("*")
       .in("plan_id", planIds)
+      .eq("is_active", true)
       .order("order_index");
     if (exs) {
       setAvailableDays([...new Set((exs as { day_label: string }[]).map((e) => e.day_label))]);
@@ -85,8 +86,13 @@ export function TrainingLogPage() {
     fetchActivePlan();
   }, [fetchActivePlan]);
 
-  const deleteLog = async (logId: string) => {
-    await supabase.from("training_logs").delete().eq("id", logId);
+  const deleteLog = async (logId: string, name: string) => {
+    if (!window.confirm(`Eintrag „${name}“ endgültig löschen?`)) return;
+    const { error } = await supabase.from("training_logs").delete().eq("id", logId);
+    if (error) {
+      alert("Löschen fehlgeschlagen. Verbindung prüfen.");
+      return;
+    }
     setHistory((prev) =>
       prev
         .map((day) => ({ ...day, exercises: day.exercises.filter((ex) => ex.id !== logId) }))
@@ -193,12 +199,21 @@ export function TrainingLogPage() {
             <span className="text-neutral-500"> / {workout.exercises.length}</span>
           </div>
           <button
-            onClick={workout.finishWorkout}
+            onClick={() => {
+              // One tap ends the session; a stray tap used to end it silently.
+              if (window.confirm("Training beenden und speichern?")) void workout.finishWorkout();
+            }}
             className="rounded-full bg-neutral-800 px-4 py-2 text-sm font-medium"
           >
             Finish
           </button>
         </div>
+
+        {workout.saveError && (
+          <p role="alert" className="mx-4 rounded-lg bg-red-500/15 px-3 py-2 text-xs text-red-300">
+            {workout.saveError}
+          </p>
+        )}
 
         {/* Rest Timer - Large Display */}
         <div className="flex flex-1 flex-col items-center justify-center px-4">
@@ -297,7 +312,6 @@ export function TrainingLogPage() {
                         Number(e.target.value),
                       )
                     }
-                    disabled={currentEx.saved}
                   />
                   <span className="text-xs text-neutral-500">Kg</span>
                   <Input
@@ -313,11 +327,10 @@ export function TrainingLogPage() {
                         Number(e.target.value),
                       )
                     }
-                    disabled={currentEx.saved}
                   />
                   <span className="text-xs text-neutral-500">reps</span>
                   <div className="ml-auto flex items-center gap-2">
-                    {!currentEx.saved && currentEx.sets_data.length > 1 && (
+                    {currentEx.sets_data.length > 1 && (
                       <button
                         onClick={() => workout.removeSet(workout.currentExIdx, setIdx)}
                         className="rounded p-1 text-neutral-600 active:text-red-400"
@@ -326,15 +339,13 @@ export function TrainingLogPage() {
                       </button>
                     )}
                     <button
-                      onClick={() =>
-                        !currentEx.saved && workout.toggleSetComplete(workout.currentExIdx, setIdx)
-                      }
-                      disabled={currentEx.saved}
+                      onClick={() => workout.toggleSetComplete(workout.currentExIdx, setIdx)}
+                      aria-label={`Satz ${setIdx + 1} ${set.completed ? "offen" : "erledigt"}`}
                       className={`flex h-8 w-8 items-center justify-center rounded-md border-2 transition-all ${
                         set.completed
                           ? "border-white bg-white"
                           : "border-neutral-600 bg-transparent"
-                      } ${currentEx.saved ? "opacity-50" : ""}`}
+                      }`}
                     >
                       {set.completed && <Check className="h-4 w-4 text-black" />}
                     </button>
@@ -344,14 +355,12 @@ export function TrainingLogPage() {
             </div>
 
             <div className="flex items-center gap-3 pt-1">
-              {!currentEx.saved && (
-                <button
-                  onClick={() => workout.addSet(workout.currentExIdx)}
-                  className="flex items-center gap-1 rounded-lg bg-neutral-800 px-3 py-2 text-xs text-neutral-400 active:scale-[0.97]"
-                >
-                  <Plus className="h-3 w-3" /> Set
-                </button>
-              )}
+              <button
+                onClick={() => workout.addSet(workout.currentExIdx)}
+                className="flex items-center gap-1 rounded-lg bg-neutral-800 px-3 py-2 text-xs text-neutral-400 active:scale-[0.97]"
+              >
+                <Plus className="h-3 w-3" /> Set
+              </button>
               <button
                 onClick={() => {
                   const input = prompt("Pausenzeit (Sekunden):", String(workout.restDuration));
@@ -438,10 +447,11 @@ export function TrainingLogPage() {
                     ))}
                   </div>
                   <button
-                    onClick={() => deleteLog(ex.id)}
-                    className="shrink-0 text-neutral-700 hover:text-red-500"
+                    onClick={() => deleteLog(ex.id, ex.name)}
+                    aria-label={`${ex.name} löschen`}
+                    className="-m-2 shrink-0 p-2 text-neutral-700 hover:text-red-500"
                   >
-                    <Trash2 className="h-3 w-3" />
+                    <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
               ))}
