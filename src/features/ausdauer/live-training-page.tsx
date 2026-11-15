@@ -23,6 +23,10 @@ const MIN_STEP_M = 2;
 // Altitude noise is several metres; only count a climb once it exceeds this
 // above the last low point, otherwise every wobble adds elevation.
 const CLIMB_THRESHOLD_M = 3;
+// A fix with a worse horizontal accuracy is a guess, not a position. Cold
+// starts on iOS often report 100+ m first; using one as the reference point
+// made every real fix look like a jump and then added the error as distance.
+const MAX_ACCURACY_M = 30;
 
 interface Lap {
   km: number;
@@ -191,6 +195,11 @@ export function LiveTrainingPage() {
       time: pos.timestamp,
     };
     const latLng: L.LatLngExpression = [pt.lat, pt.lng];
+    if (pos.coords.accuracy > MAX_ACCURACY_M) {
+      // Say so instead of silently recording nothing (woods, street canyons).
+      setGpsError("GPS-Signal schwach, Position wird noch nicht aufgezeichnet");
+      return;
+    }
     posMarkerRef.current?.setLatLng(latLng);
 
     // Paused: show where we are, but record nothing. The watch keeps running
@@ -205,13 +214,16 @@ export function LiveTrainingPage() {
       if (dt > 0 && d / dt > MAX_SPEED_MS) return;
     }
 
-    if (segmentBreak.current && points.current.length > 0) {
-      // Start a new line after a pause instead of bridging the gap.
-      polylineRef.current = L.polyline([], {
-        color: "oklch(0.75 0.18 30)",
-        weight: 4,
-        opacity: 0.9,
-      }).addTo(mapRef.current!);
+    if (segmentBreak.current) {
+      // Start a new line after a pause instead of bridging the gap. A pause
+      // before the very first fix has nothing to break from.
+      if (points.current.length > 0) {
+        polylineRef.current = L.polyline([], {
+          color: "oklch(0.75 0.18 30)",
+          weight: 4,
+          opacity: 0.9,
+        }).addTo(mapRef.current!);
+      }
       segmentBreak.current = false;
     }
     points.current.push(pt);
@@ -231,11 +243,16 @@ export function LiveTrainingPage() {
     }
 
     if (pt.alt != null) {
-      if (altAnchor.current == null || pt.alt < altAnchor.current) {
+      // The anchor moves only after a change beyond the threshold, in either
+      // direction. Following every small dip made 100 → 97 → 100 → 97 → 100
+      // count as 6 m of climbing on flat ground.
+      if (altAnchor.current == null) {
         altAnchor.current = pt.alt;
       } else if (pt.alt - altAnchor.current >= CLIMB_THRESHOLD_M) {
         const climb = pt.alt - altAnchor.current;
         setElevation((e) => e + climb);
+        altAnchor.current = pt.alt;
+      } else if (altAnchor.current - pt.alt >= CLIMB_THRESHOLD_M) {
         altAnchor.current = pt.alt;
       }
     }
@@ -260,7 +277,12 @@ export function LiveTrainingPage() {
   // the app goes to the background, and it never comes back on its own.
   useEffect(() => {
     const onVisible = () => {
-      if (document.visibilityState === "visible" && stateRef.current === "running") {
+      // Paused counts too: the lock is lost while the screen is off, and
+      // resuming afterwards must not depend on it being re-requested.
+      if (
+        document.visibilityState === "visible" &&
+        (stateRef.current === "running" || stateRef.current === "paused")
+      ) {
         void requestWakeLock();
       }
     };
@@ -303,13 +325,14 @@ export function LiveTrainingPage() {
     stateRef.current = "running";
     segmentBreak.current = true;
     altAnchor.current = null;
+    void requestWakeLock();
     setState("running");
     totalPaused.current += Date.now() - pausedAt.current;
 
     timerRef.current = setInterval(() => {
       setElapsed(Date.now() - startTime.current - totalPaused.current);
     }, 1000);
-  }, []);
+  }, [requestWakeLock]);
 
   // Stop
   const stop = useCallback(() => {

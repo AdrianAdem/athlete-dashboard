@@ -10,7 +10,7 @@ import {
 } from "react";
 import { supabase } from "@/lib/supabase";
 import { USER_ID } from "@/lib/constants";
-import { todayString } from "@/lib/utils";
+import { toLocalDateString } from "@/lib/utils";
 import type { TrainingExercise, SetLog } from "@/types/database";
 
 interface WorkoutSet extends SetLog {
@@ -20,8 +20,12 @@ interface WorkoutSet extends SetLog {
 interface WorkoutExercise extends TrainingExercise {
   sets_data: WorkoutSet[];
   previous_log: SetLog[] | null;
-  /** training_logs row of this session once saved; later saves update it. */
-  log_id: string | null;
+  /**
+   * Id of this session's training_logs row, generated up front. Saving is an
+   * upsert on it, so a retry after a lost response (or after iOS killed the
+   * app mid-request) overwrites the same row instead of adding a second one.
+   */
+  log_id: string;
 }
 
 interface WorkoutSummary {
@@ -91,8 +95,33 @@ function loadStoredWorkout(): StoredWorkout | null {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const stored = JSON.parse(raw) as StoredWorkout;
-    return Array.isArray(stored.exercises) && stored.exercises.length > 0 ? stored : null;
+    const valid =
+      Array.isArray(stored.exercises) &&
+      stored.exercises.length > 0 &&
+      !Number.isNaN(new Date(stored.startedAt).getTime()) &&
+      Number.isInteger(stored.currentExIdx) &&
+      stored.currentExIdx >= 0 &&
+      stored.currentExIdx < stored.exercises.length &&
+      stored.exercises.every(
+        (ex) =>
+          typeof ex?.id === "string" && Array.isArray(ex.sets_data) && ex.sets_data.length > 0,
+      );
+    if (!valid) throw new Error("unusable stored workout");
+    // Entries saved before log_id was generated up front get one now.
+    stored.exercises = stored.exercises.map((ex) => ({
+      ...ex,
+      log_id: ex.log_id || crypto.randomUUID(),
+    }));
+    return stored;
   } catch {
+    // Corrupt or from an older shape: drop it. Without this a bad entry
+    // crashed the training page on every load, with no way for the user to
+    // clear it on a phone.
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // Storage unavailable: nothing to clear.
+    }
     return null;
   }
 }
@@ -219,7 +248,7 @@ export function WorkoutProvider({ children }: { children: ReactNode }) {
             completed: false,
           })),
           previous_log: prevSets,
-          log_id: null,
+          log_id: crypto.randomUUID(),
         };
       }),
     );
@@ -305,43 +334,43 @@ export function WorkoutProvider({ children }: { children: ReactNode }) {
     );
   }, []);
 
-  // Writes the exercise's completed sets: insert once, update afterwards, so
-  // sets added after an earlier save are no longer dropped.
+  const startedAtRef = useRef(startedAt);
+  useEffect(() => {
+    startedAtRef.current = startedAt;
+  }, [startedAt]);
+
+  // Writes the exercise's completed sets as an upsert on the pre-generated
+  // log id: idempotent, so retries and a quick "next" + "finish" cannot create
+  // duplicates, and sets added after an earlier save are kept. Un-ticking
+  // every set removes the row again.
   const persistExercise = useCallback((exerciseId: string): Promise<boolean> => {
     const previous = saveChains.current.get(exerciseId) ?? Promise.resolve(true);
     const next = previous.then(async () => {
       const ex = exercisesRef.current.find((e) => e.id === exerciseId);
       if (!ex) return true;
       const sets = completedSets(ex);
-      if (sets.length === 0 && !ex.log_id) return true;
 
-      if (ex.log_id) {
-        const { error } = await supabase
-          .from("training_logs")
-          .update({ sets_completed: sets })
-          .eq("id", ex.log_id);
+      if (sets.length === 0) {
+        // Always delete: a no-op when nothing was saved, and correct for a row
+        // saved before the app was killed and restored (an in-memory "was
+        // saved" flag would not survive that).
+        const { error } = await supabase.from("training_logs").delete().eq("id", ex.log_id);
         return !error;
       }
-      const { data, error } = await supabase
-        .from("training_logs")
-        .insert({
+
+      const { error } = await supabase.from("training_logs").upsert(
+        {
+          id: ex.log_id,
           exercise_id: ex.id,
           user_id: USER_ID,
-          date: todayString(),
+          // The day the workout started, not "now": a session that runs past
+          // midnight or is restored the next day stays on its own day.
+          date: toLocalDateString(startedAtRef.current ?? new Date()),
           sets_completed: sets,
-        })
-        .select("id")
-        .single();
-      if (error || !data) return false;
-      // Write the id into the ref too, so a chained save right behind this one
-      // updates instead of inserting a second row.
-      exercisesRef.current = exercisesRef.current.map((e) =>
-        e.id === exerciseId ? { ...e, log_id: data.id } : e,
+        },
+        { onConflict: "id" },
       );
-      setExercises((prev) =>
-        prev.map((e) => (e.id === exerciseId ? { ...e, log_id: data.id } : e)),
-      );
-      return true;
+      return !error;
     });
     saveChains.current.set(exerciseId, next);
     return next;
@@ -352,8 +381,10 @@ export function WorkoutProvider({ children }: { children: ReactNode }) {
       const ex = exercisesRef.current[exIdx];
       if (!ex) return true;
       const ok = await persistExercise(ex.id);
-      if (!ok)
-        setSaveError("Übung konnte nicht gespeichert werden. Wird beim Beenden erneut versucht.");
+      // A later success clears the banner of an earlier failure.
+      setSaveError(
+        ok ? null : "Übung konnte nicht gespeichert werden. Wird beim Beenden erneut versucht.",
+      );
       return ok;
     },
     [persistExercise],
@@ -434,8 +465,8 @@ export function WorkoutProvider({ children }: { children: ReactNode }) {
     setSummary(null);
   }, []);
 
-  // Memoised: the rest timer ticks twice a second, and an inline object would
-  // re-render every consumer on each tick even when they ignore the timer.
+  // Memoised so consumers do not re-render on unrelated provider renders.
+  // The rest timer is part of the value and still ticks every second.
   const value = useMemo<WorkoutContextType>(
     () => ({
       workoutActive,

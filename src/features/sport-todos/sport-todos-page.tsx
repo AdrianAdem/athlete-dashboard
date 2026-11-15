@@ -3,6 +3,7 @@ import { Plus, Check, Trash2, ChevronDown, ChevronUp, X, Pencil } from "lucide-r
 import { supabase } from "@/lib/supabase";
 import { USER_ID } from "@/lib/constants";
 import { todayString, isRoutineActiveToday } from "@/lib/utils";
+import { useDayChange } from "@/lib/use-day-change";
 import { Input } from "@/components/ui/input";
 import { SwipeRow } from "@/components/ui/swipe-row";
 import type {
@@ -150,16 +151,31 @@ export function SportTodosPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+  useDayChange(() => void fetchData());
+
+  const [notice, setNotice] = useState<string | null>(null);
+  const showNotice = (msg: string) => {
+    setNotice(msg);
+    setTimeout(() => setNotice(null), 4000);
+  };
 
   // ── Routine handlers ──
 
   const toggleRoutineItem = async (routine: RoutineWithItems, itemId: string) => {
     const today = todayString();
-    const currentCompleted = routine.log?.completed_items ?? [];
+    // A log from another day (page left open overnight) must not carry its
+    // ticks into today. Ids of since-deleted steps are dropped as well.
+    const itemIds = new Set(routine.items.map((i) => i.id));
+    const currentCompleted =
+      routine.log && routine.log.date === today
+        ? routine.log.completed_items.filter((id) => itemIds.has(id))
+        : [];
     const newCompleted = currentCompleted.includes(itemId)
       ? currentCompleted.filter((id) => id !== itemId)
       : [...currentCompleted, itemId];
-    const allDone = newCompleted.length === routine.items.length;
+    const allDone =
+      routine.items.length > 0 && routine.items.every((i) => newCompleted.includes(i.id));
+    const before = routines;
 
     // Optimistic update
     setRoutines((prev) =>
@@ -175,6 +191,7 @@ export function SportTodosPage() {
                   date: today,
                   created_at: "",
                 }),
+                date: today,
                 completed_items: newCompleted,
                 completed: allDone,
               },
@@ -183,7 +200,7 @@ export function SportTodosPage() {
       ),
     );
 
-    await supabase.from("routine_logs").upsert(
+    const { error } = await supabase.from("routine_logs").upsert(
       {
         routine_id: routine.id,
         user_id: USER_ID,
@@ -193,6 +210,10 @@ export function SportTodosPage() {
       },
       { onConflict: "routine_id,user_id,date" },
     );
+    if (error) {
+      setRoutines(before);
+      showNotice("Haken konnte nicht gespeichert werden");
+    }
   };
 
   const resetRoutineForm = () => {
@@ -241,7 +262,14 @@ export function SportTodosPage() {
     };
 
     if (editingRoutineId) {
-      await supabase.from("routines").update(routineFields).eq("id", editingRoutineId);
+      const { error: updateError } = await supabase
+        .from("routines")
+        .update(routineFields)
+        .eq("id", editingRoutineId);
+      if (updateError) {
+        showNotice("Routine konnte nicht gespeichert werden");
+        return;
+      }
 
       // Sync items: update kept, insert new, delete removed. Keeping ids stable
       // preserves today's completed_items references in routine_logs.
@@ -250,7 +278,7 @@ export function SportTodosPage() {
       const removed = existing.filter((i) => !keptIds.includes(i.id)).map((i) => i.id);
       if (removed.length) await supabase.from("routine_items").delete().in("id", removed);
 
-      await Promise.all(
+      const results = await Promise.all(
         validItems.map((item, idx) => {
           const row = {
             routine_id: editingRoutineId,
@@ -265,19 +293,24 @@ export function SportTodosPage() {
             : supabase.from("routine_items").insert(row);
         }),
       );
+      if (results.some((r) => r.error)) showNotice("Nicht alle Schritte wurden gespeichert");
       resetRoutineForm();
       fetchData();
       return;
     }
 
-    const { data: routine } = await supabase
+    const { data: routine, error: createError } = await supabase
       .from("routines")
       .insert({ user_id: USER_ID, area: "sport", ...routineFields })
       .select()
       .single();
 
-    if (routine) {
-      await supabase.from("routine_items").insert(
+    if (createError || !routine) {
+      showNotice("Routine konnte nicht erstellt werden");
+      return;
+    }
+    {
+      const { error: itemsError } = await supabase.from("routine_items").insert(
         validItems.map((item, idx) => ({
           routine_id: routine.id,
           name: item.name.trim(),
@@ -287,36 +320,57 @@ export function SportTodosPage() {
           order_index: idx,
         })),
       );
+      if (itemsError) showNotice("Schritte konnten nicht gespeichert werden");
       resetRoutineForm();
       fetchData();
     }
   };
 
   const deleteRoutine = async (id: string) => {
+    const before = routines;
     setRoutines((prev) => prev.filter((r) => r.id !== id));
-    await supabase.from("routines").update({ is_active: false }).eq("id", id);
+    const { error } = await supabase.from("routines").update({ is_active: false }).eq("id", id);
+    if (error) {
+      setRoutines(before);
+      showNotice("Löschen fehlgeschlagen");
+    }
   };
 
   const deleteRoutineItem = async (routineId: string, itemId: string) => {
+    const before = routines;
     setRoutines((prev) =>
       prev.map((r) =>
         r.id === routineId ? { ...r, items: r.items.filter((i) => i.id !== itemId) } : r,
       ),
     );
-    await supabase.from("routine_items").delete().eq("id", itemId);
+    const { error } = await supabase.from("routine_items").delete().eq("id", itemId);
+    if (error) {
+      setRoutines(before);
+      showNotice("Löschen fehlgeschlagen");
+    }
   };
 
   // ── Todo handlers ──
 
   const toggleTodo = async (todo: UnifiedTodo) => {
-    setTodos((prev) => prev.map((t) => (t.id === todo.id ? { ...t, completed: !t.completed } : t)));
+    const flip = (t: UnifiedTodo) => (t.id === todo.id ? { ...t, completed: !todo.completed } : t);
+    setTodos((prev) => prev.map(flip));
     const table = todo.source === "sport" ? "sport_todos" : "daily_todos";
-    await supabase.from(table).update({ completed: !todo.completed }).eq("id", todo.id);
+    const { error } = await supabase
+      .from(table)
+      .update({ completed: !todo.completed })
+      .eq("id", todo.id);
+    if (error) {
+      setTodos((prev) =>
+        prev.map((t) => (t.id === todo.id ? { ...t, completed: todo.completed } : t)),
+      );
+      showNotice("Änderung nicht gespeichert");
+    }
   };
 
   const addTodo = async () => {
     if (!newTodoTitle.trim()) return;
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("sport_todos")
       .insert({
         user_id: USER_ID,
@@ -328,7 +382,11 @@ export function SportTodosPage() {
       })
       .select()
       .single();
-    if (data) {
+    if (error || !data) {
+      showNotice("Todo konnte nicht gespeichert werden");
+      return;
+    }
+    {
       setTodos((prev) => [{ ...(data as SportTodo), source: "sport" as const }, ...prev]);
       setNewTodoTitle("");
       setShowAddTodo(false);
@@ -338,11 +396,25 @@ export function SportTodosPage() {
   const deleteTodo = async (todo: UnifiedTodo) => {
     setTodos((prev) => prev.filter((t) => t.id !== todo.id));
     const table = todo.source === "sport" ? "sport_todos" : "daily_todos";
-    await supabase.from(table).delete().eq("id", todo.id);
+    const { error } = await supabase.from(table).delete().eq("id", todo.id);
+    if (error) {
+      setTodos((prev) => [todo, ...prev]);
+      showNotice("Löschen fehlgeschlagen");
+    }
   };
 
+  // Progress from today's log, counted only over steps that still exist, so
+  // deleting a ticked step can no longer make an unfinished routine "done".
+  const doneItemIds = (routine: RoutineWithItems) => {
+    if (!routine.log || routine.log.date !== todayString()) return [];
+    const ids = new Set(routine.log.completed_items);
+    return routine.items.filter((i) => ids.has(i.id)).map((i) => i.id);
+  };
+  const isRoutineDone = (routine: RoutineWithItems) =>
+    routine.items.length > 0 && doneItemIds(routine).length === routine.items.length;
+
   // ── Stats ──
-  const routinesDone = routines.filter((r) => r.log?.completed).length;
+  const routinesDone = routines.filter(isRoutineDone).length;
   const todosDone = todos.filter((t) => t.completed).length;
   const totalTasks = routines.length + todos.length;
   const totalDone = routinesDone + todosDone;
@@ -355,6 +427,14 @@ export function SportTodosPage() {
 
   return (
     <div className="space-y-4 p-4 pb-24">
+      {notice && (
+        <p
+          role="status"
+          className="fixed inset-x-4 top-[calc(env(safe-area-inset-top,0px)+12px)] z-50 rounded-xl bg-neutral-800 px-4 py-3 text-center text-sm text-white shadow-lg"
+        >
+          {notice}
+        </p>
+      )}
       <h1 className="text-2xl font-bold">Aufgaben</h1>
 
       {/* Progress */}
@@ -393,10 +473,10 @@ export function SportTodosPage() {
         <div className="space-y-3">
           {/* Routine list */}
           {routines.map((routine) => {
-            const completed = routine.log?.completed_items ?? [];
+            const completed = doneItemIds(routine);
             const itemsDone = completed.length;
             const isExpanded = expandedRoutine === routine.id;
-            const allDone = routine.log?.completed ?? false;
+            const allDone = isRoutineDone(routine);
 
             return (
               <SwipeRow

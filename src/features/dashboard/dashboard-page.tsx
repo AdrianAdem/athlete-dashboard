@@ -13,6 +13,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import { USER_ID } from "@/lib/constants";
 import { todayString, cn, isRoutineActiveToday } from "@/lib/utils";
+import { useDayChange } from "@/lib/use-day-change";
 import type { DailyTodo, NutritionLog, WaterLog, WeightLog, Routine } from "@/types/database";
 import { GarminHealthCard } from "./garmin-health-card";
 
@@ -29,6 +30,7 @@ export function DashboardPage() {
     items: { name: string; done: boolean }[];
   }>({ total: 0, done: 0, items: [] });
   const [calorieGoal, setCalorieGoal] = useState(2500);
+  const [waterGoalMl, setWaterGoalMl] = useState(3000);
   const [loading, setLoading] = useState(true);
 
   const fetchDashboard = useCallback(async () => {
@@ -72,10 +74,11 @@ export function DashboardPage() {
 
     const { data: profile } = await supabase
       .from("user_profiles")
-      .select("calorie_goal")
+      .select("calorie_goal, water_goal_ml")
       .eq("id", USER_ID)
       .single();
     if (profile?.calorie_goal) setCalorieGoal(profile.calorie_goal);
+    if (profile?.water_goal_ml) setWaterGoalMl(profile.water_goal_ml);
 
     // Fetch routines
     const { data: routinesData } = await supabase
@@ -92,20 +95,41 @@ export function DashboardPage() {
           isRoutineActiveToday(r.start_date, r.end_date),
       );
       const routineIds = todayRoutines.map((r) => r.id);
-      const { data: allLogs } =
+      // "Done" is derived the same way as on the Aufgaben page: every step
+      // that still exists is ticked in today's log. The stored `completed`
+      // flag goes stale when steps are added or deleted afterwards.
+      const [{ data: allLogs }, { data: allItems }] =
         routineIds.length > 0
-          ? await supabase
-              .from("routine_logs")
-              .select("routine_id, completed")
-              .in("routine_id", routineIds)
-              .eq("user_id", USER_ID)
-              .eq("date", today)
-          : { data: [] };
-      const logMap = new Map((allLogs ?? []).map((l) => [l.routine_id, l.completed]));
-      const items = todayRoutines.map((r) => ({
-        name: r.name,
-        done: !!logMap.get(r.id),
-      }));
+          ? await Promise.all([
+              supabase
+                .from("routine_logs")
+                .select("routine_id, completed_items")
+                .in("routine_id", routineIds)
+                .eq("user_id", USER_ID)
+                .eq("date", today),
+              supabase.from("routine_items").select("id, routine_id").in("routine_id", routineIds),
+            ])
+          : [{ data: [] }, { data: [] }];
+      const ticked = new Map(
+        (allLogs ?? []).map((l) => [
+          l.routine_id as string,
+          new Set(l.completed_items as string[]),
+        ]),
+      );
+      const stepsByRoutine = new Map<string, string[]>();
+      for (const item of allItems ?? []) {
+        const list = stepsByRoutine.get(item.routine_id as string) ?? [];
+        list.push(item.id as string);
+        stepsByRoutine.set(item.routine_id as string, list);
+      }
+      const items = todayRoutines.map((r) => {
+        const steps = stepsByRoutine.get(r.id) ?? [];
+        const done = ticked.get(r.id);
+        return {
+          name: r.name,
+          done: steps.length > 0 && !!done && steps.every((id) => done.has(id)),
+        };
+      });
       setRoutineStats({
         total: items.length,
         done: items.filter((i) => i.done).length,
@@ -119,10 +143,26 @@ export function DashboardPage() {
   useEffect(() => {
     fetchDashboard();
   }, [fetchDashboard]);
+  // The installed app is resumed, not reloaded: after a night in the
+  // background it still showed yesterday's numbers.
+  useDayChange(() => void fetchDashboard());
 
+  const [todoError, setTodoError] = useState(false);
   const toggleTodo = async (todo: DailyTodo) => {
-    setTodos((prev) => prev.map((t) => (t.id === todo.id ? { ...t, completed: !t.completed } : t)));
-    await supabase.from("daily_todos").update({ completed: !todo.completed }).eq("id", todo.id);
+    setTodoError(false);
+    setTodos((prev) =>
+      prev.map((t) => (t.id === todo.id ? { ...t, completed: !todo.completed } : t)),
+    );
+    const { error } = await supabase
+      .from("daily_todos")
+      .update({ completed: !todo.completed })
+      .eq("id", todo.id);
+    if (error) {
+      setTodos((prev) =>
+        prev.map((t) => (t.id === todo.id ? { ...t, completed: todo.completed } : t)),
+      );
+      setTodoError(true);
+    }
   };
 
   const todosCompleted = todos.filter((t) => t.completed).length;
@@ -162,7 +202,7 @@ export function DashboardPage() {
           icon={<Droplets className="h-5 w-5 text-blue-400" />}
           label="Wasser"
           value={`${(waterTotal / 1000).toFixed(1)}L`}
-          sub="/ 3.0L"
+          sub={`/ ${(waterGoalMl / 1000).toFixed(1)}L`}
           onClick={() => navigate("/ernaehrung")}
         />
         <StatCard
@@ -244,6 +284,12 @@ export function DashboardPage() {
               />
             </div>
           </div>
+        )}
+
+        {todoError && (
+          <p role="alert" className="mb-2 text-xs text-red-400">
+            Änderung konnte nicht gespeichert werden.
+          </p>
         )}
 
         {todosTotal === 0 ? (

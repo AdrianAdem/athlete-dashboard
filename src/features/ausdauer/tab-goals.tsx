@@ -101,8 +101,10 @@ export function TabGoals({ activities }: { activities: CardioActivity[] }) {
     load();
   }, []);
 
+  const [saveError, setSaveError] = useState(false);
   const saveGoal = async (goalType: string, value: number) => {
-    await supabase.from("cardio_goals").upsert(
+    setSaveError(false);
+    const { error } = await supabase.from("cardio_goals").upsert(
       {
         user_id: USER_ID,
         goal_type: goalType,
@@ -111,6 +113,11 @@ export function TabGoals({ activities }: { activities: CardioActivity[] }) {
       },
       { onConflict: "user_id,goal_type" },
     );
+    if (error) {
+      // Keep the field open with the typed value instead of pretending it saved.
+      setSaveError(true);
+      return;
+    }
 
     setGoals((prev) => {
       const filtered = prev.filter((g) => g.goal_type !== goalType);
@@ -160,6 +167,11 @@ export function TabGoals({ activities }: { activities: CardioActivity[] }) {
 
   return (
     <div className="space-y-3">
+      {saveError && (
+        <p role="alert" className="text-xs text-red-400">
+          Ziel konnte nicht gespeichert werden.
+        </p>
+      )}
       {/* Streak */}
       {streak > 0 && weeklyGoal > 0 && (
         <div className="flex items-center gap-3 rounded-xl bg-[#1A1A1A] px-4 py-3">

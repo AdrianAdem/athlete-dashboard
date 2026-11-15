@@ -187,7 +187,9 @@ async function getAccessToken() {
     } catch (err) {
       // Only a rejected OAuth1 token justifies a password login. A network
       // error must not trigger one: repeated SSO logins every 30 minutes are
-      // what gets a Garmin account captcha'd or locked.
+      // what gets a Garmin account captcha'd or locked. If Garmin ever
+      // answers an expired token with another status, the sync fails every
+      // run until scripts/.garmin-tokens.json is deleted by hand.
       if (err.status !== 401 && err.status !== 403) throw err;
       console.log("OAuth1-Token abgelehnt, neuer Login nötig.");
     }
@@ -451,6 +453,11 @@ function rotateLog() {
   }
 }
 
+// True when an object carries at least one non-null value.
+function hasValues(block) {
+  return !!block && Object.values(block).some((v) => v != null);
+}
+
 function hasMeasurements(daily) {
   return !!daily && (daily.steps != null || daily.resting_hr != null);
 }
@@ -500,7 +507,20 @@ async function main() {
       // that already has real measurements is not overwritten by an empty
       // block from a run where the watch had not uploaded yet.
       const existing = await loadExisting(date);
-      const merged = { ...existing, ...result, device_last_sync: deviceLastSync };
+      // A failed syncTimestamp call must not erase the last known value.
+      const merged = {
+        ...existing,
+        ...result,
+        device_last_sync: deviceLastSync ?? existing.device_last_sync ?? null,
+      };
+      // Same protection for every block, not just daily: an endpoint that
+      // answers 200 with an empty object must not replace stored values.
+      for (const block of ["daily", "stress", "heart_rate", "sleep", "hrv"]) {
+        if (hasValues(existing[block]) && !hasValues(result[block]))
+          merged[block] = existing[block];
+      }
+      // daily always carries baseline calories even when the watch uploaded
+      // nothing, so "has any value" is too weak there: require real measurements.
       if (hasMeasurements(existing.daily) && !hasMeasurements(result.daily)) {
         merged.daily = existing.daily;
         merged.stress = existing.stress;

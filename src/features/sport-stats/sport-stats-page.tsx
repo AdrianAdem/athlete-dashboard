@@ -15,6 +15,29 @@ import { USER_ID } from "@/lib/constants";
 import { TrendingUp, Activity, Zap, BarChart3, ChevronDown, Search, X } from "lucide-react";
 import type { TrainingLog, TrainingExercise, SetLog } from "@/types/database";
 import { toLocalDateString } from "@/lib/utils";
+import { getWeekStart } from "@/features/ausdauer/ausdauer-utils";
+
+// Brzycki's formula is only meaningful for low-rep sets: at 37 reps it divides
+// by zero, and beyond ~12 the estimate is mostly noise.
+const MAX_REPS_FOR_E1RM = 12;
+
+/** Best estimated 1RM over all sets of a session (not just the heaviest set). */
+function estimate1RM(sets: SetLog[]): number {
+  let best = 0;
+  for (const s of sets) {
+    if (s.weight_kg <= 0 || s.reps <= 0 || s.reps > MAX_REPS_FOR_E1RM) continue;
+    best = Math.max(best, s.weight_kg * (36 / (37 - s.reps)));
+  }
+  // No usable set (e.g. only high-rep sets): fall back to the heaviest weight.
+  return Math.round(best || Math.max(...sets.map((s) => s.weight_kg), 0));
+}
+
+const METRICS = {
+  "1RM": { key: "estimated1RM", unit: "Kg" },
+  "Max Weight": { key: "maxWeight", unit: "Kg" },
+  Volume: { key: "volume", unit: "Kg" },
+  "Total Reps": { key: "totalReps", unit: "Wdh." },
+} as const;
 
 function ExerciseDropdown({
   exercises,
@@ -178,8 +201,21 @@ export function SportStatsPage() {
   const [weeklyVolume, setWeeklyVolume] = useState<{ week: string; sets: number }[]>([]);
   const [exercises, setExercises] = useState<TrainingExercise[]>([]);
   const [selectedExercise, setSelectedExercise] = useState<string | null>(null);
+  const [archivedIds, setArchivedIds] = useState<Set<string>>(new Set());
+  // fetchStats is memoised on timeRange only, so it must read the current
+  // selection from a ref; the stale state value reset the chart to the first
+  // exercise on every range change.
+  const selectedRef = useRef<string | null>(null);
+  // Only the newest strength request may write state.
+  const strengthSeq = useRef(0);
   const [strengthData, setStrengthData] = useState<
-    { date: string; maxWeight: number; estimated1RM: number }[]
+    {
+      date: string;
+      maxWeight: number;
+      estimated1RM: number;
+      volume: number;
+      totalReps: number;
+    }[]
   >([]);
   const [loading, setLoading] = useState(true);
   const [timeRange, setTimeRange] = useState<"1W" | "1M" | "1Y" | "All">("1M");
@@ -207,35 +243,33 @@ export function SportStatsPage() {
   };
 
   const fetchExerciseStrength = async (exerciseId: string) => {
+    const seq = ++strengthSeq.current;
+    selectedRef.current = exerciseId;
     setSelectedExercise(exerciseId);
+    const since = new Date();
+    since.setDate(since.getDate() - getDaysBack());
     const { data: logs } = await supabase
       .from("training_logs")
       .select("*")
       .eq("exercise_id", exerciseId)
       .eq("user_id", USER_ID)
+      // The range tabs (1W/1M/1Y/All) used to affect only the volume chart.
+      .gte("date", toLocalDateString(since))
       .order("date");
 
-    if (logs) {
+    if (logs && seq === strengthSeq.current) {
       setStrengthData(
         (logs as TrainingLog[]).map((log) => {
           const sets = log.sets_completed as SetLog[];
-          const maxWeight = Math.max(...sets.map((s) => s.weight_kg), 0);
-          const bestSet = sets.reduce(
-            (best, s) => (s.weight_kg > best.weight_kg ? s : best),
-            sets[0] ?? { weight_kg: 0, reps: 0 },
-          );
-          // Brzycki formula for estimated 1RM
-          const e1rm =
-            bestSet && bestSet.reps > 0
-              ? Math.round(bestSet.weight_kg * (36 / (37 - bestSet.reps)))
-              : maxWeight;
           return {
             date: new Date(log.date).toLocaleDateString("de-DE", {
               day: "2-digit",
               month: "2-digit",
             }),
-            maxWeight,
-            estimated1RM: e1rm,
+            maxWeight: Math.max(...sets.map((s) => s.weight_kg), 0),
+            estimated1RM: estimate1RM(sets),
+            volume: Math.round(sets.reduce((sum, s) => sum + s.weight_kg * s.reps, 0)),
+            totalReps: sets.reduce((sum, s) => sum + s.reps, 0),
           };
         }),
       );
@@ -271,10 +305,12 @@ export function SportStatsPage() {
 
       // Calculate week streak
       let streak = 0;
-      const now = new Date();
+      const thisWeek = getWeekStart(new Date());
       for (let w = 0; w < 52; w++) {
-        const weekStart = new Date(now);
-        weekStart.setDate(now.getDate() - now.getDay() + 1 - w * 7);
+        // Monday-based, via the shared helper: `getDate() - getDay() + 1`
+        // jumped to the *next* Monday on Sundays and zeroed the streak.
+        const weekStart = new Date(thisWeek);
+        weekStart.setDate(thisWeek.getDate() - w * 7);
         const weekEnd = new Date(weekStart);
         weekEnd.setDate(weekStart.getDate() + 6);
 
@@ -286,7 +322,9 @@ export function SportStatsPage() {
           }
         }
         if (hasTraining) streak++;
-        else break;
+        // The running week is not over yet: no training so far must not end
+        // a streak that is still alive.
+        else if (w > 0) break;
       }
       setWeekStreak(streak);
     }
@@ -299,10 +337,7 @@ export function SportStatsPage() {
       // Weekly volume
       const weekMap = new Map<string, number>();
       typedLogs.forEach((log) => {
-        const d = new Date(log.date);
-        const weekStart = new Date(d);
-        weekStart.setDate(d.getDate() - d.getDay() + 1);
-        const key = toLocalDateString(weekStart);
+        const key = toLocalDateString(getWeekStart(new Date(`${log.date}T12:00:00`)));
         const totalSets = (log.sets_completed as SetLog[]).length;
         weekMap.set(key, (weekMap.get(key) ?? 0) + totalSets);
       });
@@ -332,25 +367,29 @@ export function SportStatsPage() {
       });
     }
 
-    // Fetch exercises for strength chart
-    const { data: activePlans } = await supabase
+    // Exercises for the strength chart: those of every plan, active or
+    // archived, so removing an exercise or plan does not hide its progress.
+    // Going through plans (not through all training logs) avoids the 1000-row
+    // API cap, which would silently drop old exercises.
+    const { data: plans } = await supabase
       .from("training_plans")
-      .select("id")
-      .eq("user_id", USER_ID)
-      .eq("is_active", true);
+      .select("id, is_active")
+      .eq("user_id", USER_ID);
+    const planActive = new Map((plans ?? []).map((p) => [p.id as string, p.is_active as boolean]));
+    const planIds = [...planActive.keys()];
 
-    if (activePlans && activePlans.length > 0) {
-      const planIds = activePlans.map((p) => p.id);
-      const { data: exs } = await supabase
-        .from("training_exercises")
-        .select("*")
-        .in("plan_id", planIds);
-      if (exs) {
-        setExercises(exs as TrainingExercise[]);
-        if (exs.length > 0 && !selectedExercise) {
-          fetchExerciseStrength(exs[0].id);
-        }
-      }
+    const { data: exs } = planIds.length
+      ? await supabase.from("training_exercises").select("*").in("plan_id", planIds)
+      : { data: [] as TrainingExercise[] };
+    const all = (exs ?? []) as TrainingExercise[];
+    const isArchived = (ex: TrainingExercise) =>
+      ex.is_active === false || planActive.get(ex.plan_id) !== true;
+
+    setArchivedIds(new Set(all.filter(isArchived).map((ex) => ex.id)));
+    setExercises(all);
+    if (all.length > 0 && !selectedRef.current) {
+      const first = all.find((e) => !isArchived(e)) ?? all[0];
+      void fetchExerciseStrength(first.id);
     }
 
     setLoading(false);
@@ -361,19 +400,25 @@ export function SportStatsPage() {
     fetchStats();
   }, [fetchStats]);
 
-  const selectedEx = exercises.find((e) => e.id === selectedExercise);
+  // Range tabs apply to the strength chart as well.
+  useEffect(() => {
+    if (selectedExercise) void fetchExerciseStrength(selectedExercise);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeRange]);
+
+  // Label archived exercises at render time; the suffix is display only.
+  const displayExercises = exercises.map((e) =>
+    archivedIds.has(e.id) ? { ...e, name: `${e.name} (archiviert)` } : e,
+  );
+  const selectedEx = displayExercises.find((e) => e.id === selectedExercise);
+  const metric = METRICS[metricTab];
+  const metricValues = strengthData.map((d) => d[metric.key]);
   const improvement =
-    strengthData.length >= 2
-      ? ((strengthData[strengthData.length - 1].estimated1RM - strengthData[0].estimated1RM) /
-          Math.max(strengthData[0].estimated1RM, 1)) *
+    metricValues.length >= 2
+      ? ((metricValues[metricValues.length - 1] - metricValues[0]) / Math.max(metricValues[0], 1)) *
         100
       : 0;
-  const latestValue =
-    strengthData.length > 0
-      ? metricTab === "1RM"
-        ? strengthData[strengthData.length - 1].estimated1RM
-        : strengthData[strengthData.length - 1].maxWeight
-      : 0;
+  const latestValue = metricValues.length > 0 ? metricValues[metricValues.length - 1] : 0;
 
   // Calendar rendering
   type CalDay = { date: Date; hasTraining: boolean } | null;
@@ -470,7 +515,7 @@ export function SportStatsPage() {
             ) : (
               <>
                 <ExerciseDropdown
-                  exercises={exercises}
+                  exercises={displayExercises}
                   selectedId={selectedExercise}
                   onSelect={fetchExerciseStrength}
                 />
@@ -540,7 +585,7 @@ export function SportStatsPage() {
       {/* Strength chart */}
       <div className="rounded-xl bg-card p-4">
         <ExerciseDropdown
-          exercises={exercises}
+          exercises={displayExercises}
           selectedId={selectedExercise}
           onSelect={fetchExerciseStrength}
         />
@@ -553,7 +598,7 @@ export function SportStatsPage() {
             </div>
             <div className="mb-2 flex items-baseline gap-2">
               <span className="text-3xl font-bold">{latestValue}</span>
-              <span className="text-sm text-neutral-500">Kg</span>
+              <span className="text-sm text-neutral-500">{metric.unit}</span>
               {improvement !== 0 && (
                 <span
                   className={`text-sm font-medium ${improvement > 0 ? "text-green-500" : "text-red-500"}`}
@@ -599,7 +644,7 @@ export function SportStatsPage() {
               />
               <Line
                 type="monotone"
-                dataKey={metricTab === "1RM" ? "estimated1RM" : "maxWeight"}
+                dataKey={metric.key}
                 stroke="#ffffff"
                 strokeWidth={2}
                 dot={{ fill: "#ffffff", r: 3 }}
