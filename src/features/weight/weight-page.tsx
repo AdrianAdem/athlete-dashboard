@@ -24,10 +24,27 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { SwipeRow } from "@/components/ui/swipe-row";
 import { Textarea } from "@/components/ui/textarea";
 import type { WeightLog } from "@/types/database";
 
 type TimeRange = "7" | "30" | "90" | "365";
+
+// Plausible ranges, checked where the user types. One mistyped "820" instead of
+// "82.0" used to wreck the chart and, through the body-weight-based protein
+// goal, the macro targets.
+const LIMITS = {
+  weight: { min: 30, max: 300, label: "Gewicht (kg)" },
+  bodyFat: { min: 2, max: 60, label: "Körperfett (%)" },
+  muscle: { min: 10, max: 150, label: "Muskelmasse (kg)" },
+  waist: { min: 40, max: 200, label: "Bauchumfang (cm)" },
+} as const;
+
+function outOfRange(value: string | number, limit: { min: number; max: number }) {
+  if (value === "" || value === 0) return false;
+  const n = Number(value);
+  return !Number.isFinite(n) || n < limit.min || n > limit.max;
+}
 
 export function WeightPage() {
   const [logs, setLogs] = useState<WeightLog[]>([]);
@@ -40,6 +57,9 @@ export function WeightPage() {
   const [muscleMass, setMuscleMass] = useState<string>("");
   const [waist, setWaist] = useState<string>("");
   const [notes, setNotes] = useState("");
+  const [formError, setFormError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [listError, setListError] = useState<string | null>(null);
 
   const [showWeight, setShowWeight] = useState(true);
   const [showFat, setShowFat] = useState(false);
@@ -64,29 +84,79 @@ export function WeightPage() {
     fetchLogs();
   }, [fetchLogs]);
 
+  // Opening the dialog on a day that already has an entry shows that entry, so
+  // saving again edits it instead of blanking its other fields.
+  const openDialog = (open: boolean) => {
+    setDialogOpen(open);
+    setFormError(null);
+    if (!open) return;
+    const today = logs.find((l) => l.date === todayString());
+    setWeight(today?.weight_kg ?? 0);
+    setBodyFat(today?.body_fat_percent != null ? String(today.body_fat_percent) : "");
+    setMuscleMass(today?.muscle_mass_kg != null ? String(today.muscle_mass_kg) : "");
+    setWaist(today?.waist_cm != null ? String(today.waist_cm) : "");
+    setNotes(today?.notes ?? "");
+  };
+
   const addEntry = async () => {
-    if (weight <= 0) return;
-    const { data } = await supabase
-      .from("weight_log")
-      .insert({
-        user_id: USER_ID,
-        date: todayString(),
-        weight_kg: weight,
-        body_fat_percent: bodyFat ? Number(bodyFat) : null,
-        muscle_mass_kg: muscleMass ? Number(muscleMass) : null,
-        waist_cm: waist ? Number(waist) : null,
-        notes: notes.trim() || null,
-      })
-      .select()
-      .single();
-    if (data) {
-      setLogs((prev) => [...prev, data as WeightLog].sort((a, b) => a.date.localeCompare(b.date)));
-      setDialogOpen(false);
-      setWeight(0);
-      setBodyFat("");
-      setMuscleMass("");
-      setWaist("");
-      setNotes("");
+    if (weight <= 0 || saving) return;
+    const checks: [string | number, keyof typeof LIMITS][] = [
+      [weight, "weight"],
+      [bodyFat, "bodyFat"],
+      [muscleMass, "muscle"],
+      [waist, "waist"],
+    ];
+    const bad = checks.find(([value, key]) => outOfRange(value, LIMITS[key]));
+    if (bad) {
+      const l = LIMITS[bad[1]];
+      setFormError(`${l.label}: erlaubt sind ${l.min} bis ${l.max}`);
+      return;
+    }
+    setFormError(null);
+    setSaving(true);
+
+    const fields = {
+      weight_kg: weight,
+      body_fat_percent: bodyFat ? Number(bodyFat) : null,
+      muscle_mass_kg: muscleMass ? Number(muscleMass) : null,
+      waist_cm: waist ? Number(waist) : null,
+      notes: notes.trim() || null,
+    };
+    // One entry per day: a second weigh-in the same day replaces the first
+    // instead of drawing two points on one date.
+    const today = logs.find((l) => l.date === todayString());
+    const { data, error } = today
+      ? await supabase.from("weight_log").update(fields).eq("id", today.id).select().single()
+      : await supabase
+          .from("weight_log")
+          .insert({ user_id: USER_ID, date: todayString(), ...fields })
+          .select()
+          .single();
+    setSaving(false);
+    if (error || !data) {
+      setFormError("Speichern fehlgeschlagen. Verbindung prüfen.");
+      return;
+    }
+    setLogs((prev) =>
+      [...prev.filter((l) => l.id !== data.id), data as WeightLog].sort((a, b) =>
+        a.date.localeCompare(b.date),
+      ),
+    );
+    setDialogOpen(false);
+    setWeight(0);
+    setBodyFat("");
+    setMuscleMass("");
+    setWaist("");
+    setNotes("");
+  };
+
+  const deleteEntry = async (entry: WeightLog) => {
+    setListError(null);
+    setLogs((prev) => prev.filter((l) => l.id !== entry.id));
+    const { error } = await supabase.from("weight_log").delete().eq("id", entry.id);
+    if (error) {
+      setLogs((prev) => [...prev, entry].sort((a, b) => a.date.localeCompare(b.date)));
+      setListError("Löschen fehlgeschlagen");
     }
   };
 
@@ -107,7 +177,7 @@ export function WeightPage() {
     <div className="space-y-4 p-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold">Gewicht</h1>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <Dialog open={dialogOpen} onOpenChange={openDialog}>
           <DialogTrigger asChild>
             <Button size="sm">
               <Plus className="mr-1 h-4 w-4" /> Eintrag
@@ -160,8 +230,13 @@ export function WeightPage() {
                 <Label>Notizen</Label>
                 <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
               </div>
-              <Button onClick={addEntry} className="w-full" disabled={weight <= 0}>
-                Speichern
+              {formError && (
+                <p role="alert" className="text-xs text-red-400">
+                  {formError}
+                </p>
+              )}
+              <Button onClick={addEntry} className="w-full" disabled={weight <= 0 || saving}>
+                {saving ? "Speichert..." : "Speichern"}
               </Button>
             </div>
           </DialogContent>
@@ -286,6 +361,34 @@ export function WeightPage() {
             })()}
           </CardContent>
         </Card>
+      )}
+
+      {logs.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">Einträge · nach links wischen zum Löschen</p>
+          {listError && (
+            <p role="alert" className="text-xs text-red-400">
+              {listError}
+            </p>
+          )}
+          {[...logs]
+            .reverse()
+            .slice(0, 15)
+            .map((l) => (
+              <SwipeRow key={l.id} rounded="rounded-lg" onDelete={() => deleteEntry(l)}>
+                <div className="flex items-center justify-between px-3 py-2.5 text-sm">
+                  <span className="text-muted-foreground">
+                    {new Date(`${l.date}T12:00:00`).toLocaleDateString("de-DE", {
+                      day: "2-digit",
+                      month: "2-digit",
+                      year: "2-digit",
+                    })}
+                  </span>
+                  <strong>{l.weight_kg} kg</strong>
+                </div>
+              </SwipeRow>
+            ))}
+        </div>
       )}
     </div>
   );

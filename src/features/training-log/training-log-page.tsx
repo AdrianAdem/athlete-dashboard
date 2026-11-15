@@ -364,7 +364,11 @@ export function TrainingLogPage() {
               <button
                 onClick={() => {
                   const input = prompt("Pausenzeit (Sekunden):", String(workout.restDuration));
-                  if (input) workout.setRestDuration(Math.max(0, Number(input)));
+                  // "abc" became NaN, which made the rest timer count forever.
+                  const seconds = Number(input);
+                  if (input && Number.isFinite(seconds) && seconds > 0) {
+                    workout.setRestDuration(Math.min(3600, Math.round(seconds)));
+                  }
                 }}
                 className="flex items-center gap-1 rounded-lg bg-neutral-800 px-3 py-2 text-xs text-neutral-400 active:scale-[0.97]"
               >

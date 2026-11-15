@@ -76,3 +76,15 @@
 .animate-fab-pulse {
   animation: fab-pulse 2.5s ease-in-out infinite;
 }
+
+/* iOS Safari zooms into any text field below 16px and does not zoom back out,
+   which shifted bottom sheets and the workout screen. Touch devices only, so
+   desktop keeps the compact sizing; !important because feature code sets
+   text-sm / text-xs directly on inputs. */
+@media (hover: none) and (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
