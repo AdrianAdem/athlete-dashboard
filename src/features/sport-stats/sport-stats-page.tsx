@@ -290,16 +290,31 @@ export function SportStatsPage() {
       .gte("date", sinceStr)
       .order("date");
 
-    // Fetch all logs for calendar (last 90 days always)
+    // Streak loop below walks 52 weeks back, so fetch a full year of days.
     const calSince = new Date();
-    calSince.setDate(calSince.getDate() - 90);
-    const { data: calLogs } = await supabase
-      .from("training_logs")
-      .select("date")
-      .eq("user_id", USER_ID)
-      .gte("date", toLocalDateString(calSince));
+    calSince.setDate(calSince.getDate() - 365);
+    // PostgREST caps a response at 1000 rows and a year of per-exercise logs can
+    // exceed that, so page through, newest first.
+    const calLogs: { date: string }[] = [];
+    let calFailed = false;
+    for (let from = 0; from < 5000; from += 1000) {
+      const { data: page, error: pageError } = await supabase
+        .from("training_logs")
+        .select("date")
+        .eq("user_id", USER_ID)
+        .gte("date", toLocalDateString(calSince))
+        .order("date", { ascending: false })
+        .range(from, from + 999);
+      if (pageError || !page) {
+        // Keep the previous calendar/streak instead of showing "no training".
+        calFailed = true;
+        break;
+      }
+      calLogs.push(...(page as { date: string }[]));
+      if (page.length < 1000) break;
+    }
 
-    if (calLogs) {
+    if (!calFailed) {
       const days = new Set(calLogs.map((l) => l.date as string));
       setTrainingDays(days);
 

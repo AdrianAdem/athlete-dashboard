@@ -87,6 +87,18 @@ export function formatDistance(meters: number): string {
   return `${Math.round(meters)} m`;
 }
 
+// ISO week-year: the Thursday of the week decides the year, so 2026-12-31 or
+// 2027-01-01 can belong to week 53 of 2026 and must not mix with 2027-W1.
+export function getIsoWeekYear(d: Date): number {
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  date.setUTCDate(date.getUTCDate() + 4 - (date.getUTCDay() || 7));
+  return date.getUTCFullYear();
+}
+
+function isoWeekKey(d: Date): string {
+  return `${getIsoWeekYear(d)}-W${getWeekNumber(d)}`;
+}
+
 export function getWeekNumber(d: Date): number {
   const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
   date.setUTCDate(date.getUTCDate() + 4 - (date.getUTCDay() || 7));
@@ -123,25 +135,24 @@ export function groupByWeek(activities: CardioActivity[]): WeekGroup[] {
 
   for (const a of activities) {
     const d = new Date(a.start_date);
-    const wn = getWeekNumber(d);
-    const yr = d.getFullYear();
-    const key = `${yr}-W${wn}`;
+    const key = isoWeekKey(d);
     const list = groups.get(key) ?? [];
     list.push(a);
     groups.set(key, list);
   }
 
   const now = new Date();
-  const currentWeek = getWeekNumber(now);
-  const currentYear = now.getFullYear();
+  const currentKey = isoWeekKey(now);
+  const lastWeekDate = new Date(now);
+  lastWeekDate.setDate(lastWeekDate.getDate() - 7);
+  const lastKey = isoWeekKey(lastWeekDate);
 
   return Array.from(groups.entries()).map(([key, items]) => {
     const wn = parseInt(key.split("W")[1]);
-    const yr = parseInt(key.split("-")[0]);
 
     let weekLabel: string;
-    if (yr === currentYear && wn === currentWeek) weekLabel = "Diese Woche";
-    else if (yr === currentYear && wn === currentWeek - 1) weekLabel = "Letzte Woche";
+    if (key === currentKey) weekLabel = "Diese Woche";
+    else if (key === lastKey) weekLabel = "Letzte Woche";
     else weekLabel = `KW ${wn}`;
 
     const totalDist = items.reduce((s, a) => s + (a.distance_m ?? 0), 0);
@@ -157,7 +168,7 @@ export function computeBadges(activities: CardioActivity[]): Map<string, string>
 
   for (const a of activities) {
     const d = new Date(a.start_date);
-    const key = `${d.getFullYear()}-W${getWeekNumber(d)}`;
+    const key = isoWeekKey(d);
     const list = weeks.get(key) ?? [];
     list.push(a);
     weeks.set(key, list);
