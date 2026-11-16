@@ -254,7 +254,11 @@ export function ActivityDetailPage() {
   const hrStream = (streams?.heartrate ?? []) as number[];
   const altStream = (streams?.altitude ?? []) as number[];
   const velStream = (streams?.velocity_smooth ?? []) as number[];
-  const cadStream = (streams?.cadence ?? []) as number[];
+  // Strava reports run cadence per leg (steps/min = value * 2); rides are rpm as-is.
+  const isRun = activity.activity_type === "run";
+  const cadFactor = isRun ? 2 : 1;
+  const cadUnit = isRun ? "spm" : "rpm";
+  const cadStream = ((streams?.cadence ?? []) as number[]).map((c) => c * cadFactor);
   const distStream = (streams?.distance ?? []) as number[];
   const timeStream = (streams?.time ?? []) as number[];
 
@@ -448,7 +452,7 @@ export function ActivityDetailPage() {
           <MiniChart
             data={cadStream as number[]}
             color="oklch(0.72 0.14 170)"
-            label="Kadenz (spm)"
+            label={`Kadenz (${cadUnit})`}
             height={50}
           />
         </div>
@@ -522,7 +526,7 @@ export function ActivityDetailPage() {
             {(detail.average_cadence as number) > 0 && (
               <DetailRow
                 label="Kadenz"
-                value={`${Math.round((detail.average_cadence as number) * 2)} spm`}
+                value={`${Math.round((detail.average_cadence as number) * cadFactor)} ${cadUnit}`}
               />
             )}
             {(detail.average_temp as number) != null && (

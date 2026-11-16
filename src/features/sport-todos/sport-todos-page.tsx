@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Plus, Check, Trash2, ChevronDown, ChevronUp, X, Pencil } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { USER_ID } from "@/lib/constants";
@@ -154,9 +154,26 @@ export function SportTodosPage() {
   useDayChange(() => void fetchData());
 
   const [notice, setNotice] = useState<string | null>(null);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(noticeTimer.current), []);
   const showNotice = (msg: string) => {
     setNotice(msg);
-    setTimeout(() => setNotice(null), 4000);
+    clearTimeout(noticeTimer.current);
+    noticeTimer.current = setTimeout(() => setNotice(null), 4000);
+  };
+
+  // Revert one routine to its pre-edit state; other routines keep whatever
+  // concurrent edits happened meanwhile. A routine missing now (deleted
+  // optimistically) is put back at its old position.
+  const restoreRoutine = (before: typeof routines, id: string) => {
+    setRoutines((prev) => {
+      const old = before.find((r) => r.id === id);
+      if (!old) return prev;
+      if (prev.some((r) => r.id === id)) return prev.map((r) => (r.id === id ? old : r));
+      const next = [...prev];
+      next.splice(Math.min(before.indexOf(old), next.length), 0, old);
+      return next;
+    });
   };
 
   // ── Routine handlers ──
@@ -211,7 +228,7 @@ export function SportTodosPage() {
       { onConflict: "routine_id,user_id,date" },
     );
     if (error) {
-      setRoutines(before);
+      restoreRoutine(before, routine.id);
       showNotice("Haken konnte nicht gespeichert werden");
     }
   };
@@ -331,7 +348,7 @@ export function SportTodosPage() {
     setRoutines((prev) => prev.filter((r) => r.id !== id));
     const { error } = await supabase.from("routines").update({ is_active: false }).eq("id", id);
     if (error) {
-      setRoutines(before);
+      restoreRoutine(before, id);
       showNotice("Löschen fehlgeschlagen");
     }
   };
@@ -345,7 +362,7 @@ export function SportTodosPage() {
     );
     const { error } = await supabase.from("routine_items").delete().eq("id", itemId);
     if (error) {
-      setRoutines(before);
+      restoreRoutine(before, routineId);
       showNotice("Löschen fehlgeschlagen");
     }
   };

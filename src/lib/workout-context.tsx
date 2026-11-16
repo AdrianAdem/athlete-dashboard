@@ -20,6 +20,8 @@ interface WorkoutSet extends SetLog {
 interface WorkoutExercise extends TrainingExercise {
   sets_data: WorkoutSet[];
   previous_log: SetLog[] | null;
+  /** Heaviest weight ever logged for this exercise; PRs compare against it, not just the last session. Optional: workouts restored from older storage lack it. */
+  best_weight?: number;
   /**
    * Id of this session's training_logs row, generated up front. Saving is an
    * upsert on it, so a retry after a lost response (or after iOS killed the
@@ -228,6 +230,29 @@ export function WorkoutProvider({ children }: { children: ReactNode }) {
       .order("order_index");
     if (!exs) return;
 
+    // One query for all exercises. On error best_weight stays undefined, so the
+    // PR check falls back to the last session instead of inventing a record.
+    const bestByExercise = new Map<string, number>();
+    const { data: histLogs, error: histError } = await supabase
+      .from("training_logs")
+      .select("exercise_id, sets_completed")
+      .eq("user_id", USER_ID)
+      .in(
+        "exercise_id",
+        (exs as TrainingExercise[]).map((e) => e.id),
+      );
+    if (!histError) {
+      for (const l of histLogs ?? []) {
+        const id = l.exercise_id as string;
+        const sets = (l.sets_completed as SetLog[] | null) ?? [];
+        const max = Math.max(0, ...sets.map((x) => x.weight_kg).filter(Number.isFinite));
+        bestByExercise.set(id, Math.max(bestByExercise.get(id) ?? 0, max));
+      }
+      for (const e of exs as TrainingExercise[]) {
+        if (!bestByExercise.has(e.id)) bestByExercise.set(e.id, 0);
+      }
+    }
+
     const exercisesWithPrev: WorkoutExercise[] = await Promise.all(
       (exs as TrainingExercise[]).map(async (ex) => {
         const { data: prevLog } = await supabase
@@ -239,6 +264,7 @@ export function WorkoutProvider({ children }: { children: ReactNode }) {
           .limit(1)
           .maybeSingle();
         const prevSets = prevLog ? (prevLog.sets_completed as SetLog[]) : null;
+        const bestWeight = bestByExercise.get(ex.id);
         return {
           ...ex,
           sets_data: Array.from({ length: ex.sets }, (_, i) => ({
@@ -248,6 +274,7 @@ export function WorkoutProvider({ children }: { children: ReactNode }) {
             completed: false,
           })),
           previous_log: prevSets,
+          best_weight: bestWeight,
           log_id: crypto.randomUUID(),
         };
       }),
@@ -431,7 +458,8 @@ export function WorkoutProvider({ children }: { children: ReactNode }) {
       totalWeight += done.reduce((s, set) => s + set.weight_kg * set.reps, 0);
 
       const currentMax = Math.max(...done.map((s) => s.weight_kg), 0);
-      const prevMax = ex.previous_log ? Math.max(...ex.previous_log.map((s) => s.weight_kg), 0) : 0;
+      const lastMax = ex.previous_log ? Math.max(...ex.previous_log.map((s) => s.weight_kg), 0) : 0;
+      const prevMax = Math.max(lastMax, ex.best_weight ?? 0);
       const isPR = prevMax > 0 && currentMax > prevMax;
       const improvement = prevMax > 0 ? ((currentMax - prevMax) / prevMax) * 100 : 0;
       if (isPR) records++;
