@@ -5,6 +5,8 @@ import { supabase } from "@/lib/supabase";
 import { uid, useAuth } from "@/lib/auth";
 import { IS_DEMO } from "@/lib/demo-client";
 import { deleteAccount } from "@/lib/account-service";
+import { hasConsent, withdrawConsent } from "@/lib/consent";
+import { LegalLinks } from "@/features/legal/legal-layout";
 import { Input } from "@/components/ui/input";
 import {
   getStravaStatus,
@@ -58,6 +60,18 @@ export function SettingsPage() {
   const [fatGoal, setFatGoal] = useState<number | null>(null);
   const [waterGoal, setWaterGoal] = useState(3000);
   const { session, signOut } = useAuth();
+  const [aiConsent, setAiConsent] = useState(false);
+  useEffect(() => {
+    if (IS_DEMO) return;
+    hasConsent("ai_processing")
+      .then(setAiConsent)
+      .catch(() => setAiConsent(false));
+  }, []);
+  const withdrawAiConsent = () => {
+    withdrawConsent("ai_processing")
+      .then(() => setAiConsent(false))
+      .catch((err: Error) => setErrorMsg(err.message));
+  };
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteWord, setDeleteWord] = useState("");
   const [deleting, setDeleting] = useState(false);
@@ -345,7 +359,8 @@ export function SettingsPage() {
       <div className="rounded-xl bg-card p-4 space-y-4">
         <p className="text-sm font-medium text-neutral-400">Tagesziele</p>
         <p className="text-xs text-neutral-600">
-          Makros leer lassen = automatisch aus Kalorienziel und Körpergewicht.
+          Makros leer lassen = automatisch aus Kalorienziel und Körpergewicht. Richtwerte, keine
+          medizinische Beratung (siehe Gesundheitshinweis).
         </p>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1">
@@ -530,6 +545,8 @@ export function SettingsPage() {
         </p>
       )}
 
+      <LegalLinks className="text-center text-xs text-neutral-500" />
+
       {/* Account */}
       <div className="rounded-xl bg-card p-4 space-y-3">
         <p className="text-xs text-neutral-400">Angemeldet als {session?.user.email ?? "Demo"}</p>
@@ -539,6 +556,11 @@ export function SettingsPage() {
             className="flex w-full items-center justify-center gap-2 rounded-xl bg-neutral-800 py-3 text-sm font-medium text-neutral-300 transition-all active:scale-[0.98]"
           >
             Abmelden
+          </button>
+        )}
+        {aiConsent && (
+          <button onClick={withdrawAiConsent} className="w-full py-2 text-xs text-neutral-400">
+            KI-Zustimmung zurückziehen
           </button>
         )}
         {!IS_DEMO && !deleteOpen && (

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { LegalLinks } from "@/features/legal/legal-layout";
 import type { FormEvent } from "react";
 import { useAuth } from "@/lib/auth";
 import type { OAuthProvider } from "@/lib/auth";
@@ -118,6 +119,13 @@ export function LoginPage() {
           </div>
         )}
 
+        {mode !== "reset" && (
+          <p className="text-[11px] text-neutral-500">
+            Nach der Anmeldung bestätigst du die Einwilligung zur Verarbeitung deiner
+            Gesundheitsdaten.
+          </p>
+        )}
+
         <div className="flex justify-between text-xs text-neutral-400">
           {mode === "signin" ? (
             <>
@@ -128,6 +136,8 @@ export function LoginPage() {
             <button onClick={() => switchMode("signin")}>Zurück zur Anmeldung</button>
           )}
         </div>
+
+        <LegalLinks className="text-center text-[11px] text-neutral-500" />
       </div>
     </div>
   );

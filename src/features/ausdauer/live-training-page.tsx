@@ -5,7 +5,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { saveManualActivity } from "@/lib/strava-service";
 import { cn } from "@/lib/utils";
-import { CARTO_DARK_TILES } from "./ausdauer-utils";
+import { CARTO_DARK_TILES, MAP_ATTRIBUTION } from "./ausdauer-utils";
 
 interface GpsPoint {
   lat: number;
@@ -140,10 +140,10 @@ export function LiveTrainingPage() {
 
     const map = L.map(mapContainerRef.current, {
       zoomControl: false,
-      attributionControl: false,
+      attributionControl: true,
     }).setView([50.1109, 8.6821], 15); // Frankfurt default
 
-    L.tileLayer(CARTO_DARK_TILES, { maxZoom: 19 }).addTo(map);
+    L.tileLayer(CARTO_DARK_TILES, { maxZoom: 19, attribution: MAP_ATTRIBUTION }).addTo(map);
 
     const line = L.polyline([], {
       color: "oklch(0.75 0.18 30)",

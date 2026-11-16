@@ -1,5 +1,8 @@
 import type { CardioActivity } from "@/types/database";
 
+// Both licences require the credit to stay visible on the map.
+export const MAP_ATTRIBUTION =
+  '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions" target="_blank" rel="noopener noreferrer">CARTO</a>';
 export const CARTO_DARK_TILES = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
 
 export function getPolyline(a: CardioActivity): string | undefined {

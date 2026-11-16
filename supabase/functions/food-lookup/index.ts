@@ -53,6 +53,23 @@ async function aiAllowed(userId: string): Promise<boolean> {
   return data === true;
 }
 
+// The AI call sends the user's text to a third party, so the stored consent
+// (user_consents, written by the app after an explicit yes) is enforced here too.
+async function hasAiConsent(userId: string): Promise<boolean> {
+  const admin = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+  );
+  const { data, error } = await admin
+    .from("user_consents")
+    .select("version")
+    .eq("user_id", userId)
+    .eq("kind", "ai_processing")
+    .maybeSingle();
+  if (error) throw new Error("Einwilligung konnte nicht geprüft werden");
+  return !!data;
+}
+
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -214,8 +231,8 @@ function validItems(raw: unknown): AIFoodItem[] {
 async function handleAI(text: string) {
   const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
   if (!apiKey) throw new Error("KI-Eingabe ist nicht eingerichtet (ANTHROPIC_API_KEY fehlt)");
-  // Public function (no auth): cap input and output so it cannot be used as a
-  // free general-purpose LLM proxy.
+  // Cap input and output so a signed-in user cannot use this as a free
+  // general-purpose LLM proxy (the per-user hourly limit sits in front).
   if (text.length > 500) throw new Error("Text zu lang (max 500 Zeichen)");
 
   const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -277,6 +294,9 @@ serve(async (req) => {
       case "search":
         return json(await handleSearch(String(body.query ?? ""), Number(body.page) || 0));
       case "ai":
+        if (!(await hasAiConsent(userId))) {
+          return json({ error: "Zustimmung zur KI-Nutzung fehlt" }, 403);
+        }
         if (!(await aiAllowed(userId)))
           return json({ error: "Zu viele KI-Anfragen, bitte später erneut." }, 429);
         return json(await handleAI(String(body.text ?? "")));

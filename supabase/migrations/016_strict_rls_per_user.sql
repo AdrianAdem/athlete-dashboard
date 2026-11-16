@@ -6,8 +6,10 @@
 -- parent. The strava_* token tables and ai_usage keep RLS on with no policy:
 -- service role (edge functions) only.
 --
--- Re-runnable: every step drops before it creates, and the migration ends with
--- checks that fail (and roll everything back) if anything is left open.
+-- Run once, in order (016 before 017). Every step drops before it creates and the
+-- migration ends with checks that roll everything back if anything is left
+-- open. Do NOT run it again after 017: step 1 drops every policy in public,
+-- including the one on user_consents, which only 017 creates.
 
 -- 0. Every user_id must point at a real account, or the FKs below would fail.
 DO $$
