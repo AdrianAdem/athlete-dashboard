@@ -32,6 +32,12 @@ export interface StravaStatus {
   last_updated: string | null;
 }
 
+/** Completes a Strava link started in this account (see strava-auth callback). */
+export async function finalizeStravaConnection(state: string, claim: string): Promise<void> {
+  if (IS_DEMO) return;
+  await stravaFetch("strava-auth/finalize", postJson({ state, claim }));
+}
+
 export async function getStravaStatus(): Promise<StravaStatus> {
   // Demo mode has no edge functions; the fixture activities are already loaded,
   // so report a connected account rather than an error state.
@@ -43,25 +49,25 @@ export async function getStravaStatus(): Promise<StravaStatus> {
       last_updated: new Date().toISOString(),
     };
   }
-  return stravaFetch<StravaStatus>(`strava-auth/status?user_id=${uid()}`);
+  return stravaFetch<StravaStatus>(`strava-auth/status`);
 }
 
 export async function getStravaAuthUrl(): Promise<string> {
   if (IS_DEMO) throw new Error("Im Demo-Modus nicht verfügbar");
-  const data = await stravaFetch<{ url: string }>(`strava-auth/authorize?user_id=${uid()}`);
+  const data = await stravaFetch<{ url: string }>(`strava-auth/authorize`);
   return data.url;
 }
 
 export async function disconnectStrava(): Promise<void> {
   if (IS_DEMO) throw new Error("Im Demo-Modus nicht verfügbar");
-  await stravaFetch("strava-auth/disconnect", postJson({ user_id: uid() }));
+  await stravaFetch("strava-auth/disconnect", postJson({}));
 }
 
 export async function syncStravaActivities(): Promise<{ imported: number; skipped: number }> {
   if (IS_DEMO) return { imported: 0, skipped: 0 };
   // The edge function pages through Strava itself and only fetches activities
   // newer than the newest stored one.
-  return stravaFetch("strava-sync/activities", postJson({ user_id: uid() }));
+  return stravaFetch("strava-sync/activities", postJson({}));
 }
 
 export async function getCardioActivities(limit = 50) {
@@ -79,7 +85,7 @@ export async function getActivityDetail(activityId: string) {
   if (IS_DEMO) return {};
   return stravaFetch<Record<string, unknown>>(
     "strava-sync/activity",
-    postJson({ user_id: uid(), activity_id: activityId }),
+    postJson({ activity_id: activityId }),
   );
 }
 
@@ -87,7 +93,7 @@ export async function getActivityStreams(activityId: string, keys?: string) {
   if (IS_DEMO) return {};
   return stravaFetch<Record<string, unknown[]>>(
     "strava-sync/streams",
-    postJson({ user_id: uid(), activity_id: activityId, keys }),
+    postJson({ activity_id: activityId, keys }),
   );
 }
 
