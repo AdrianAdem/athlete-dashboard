@@ -10,12 +10,16 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-// Single-user app: requests for any other id are refused so strangers cannot
-// run syncs (and burn Strava quota) under made-up ids.
-const OWNER_USER_ID = Deno.env.get("OWNER_USER_ID") ?? "00000000-0000-0000-0000-000000000001";
-
 function getSupabaseAdmin() {
   return createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+}
+
+// Resolves the signed-in user from the request's bearer token, or null.
+async function requireUser(req: Request): Promise<string | null> {
+  const token = req.headers.get("Authorization")?.replace(/^Bearer\s+/i, "");
+  if (!token) return null;
+  const { data, error } = await getSupabaseAdmin().auth.getUser(token);
+  return error ? null : (data.user?.id ?? null);
 }
 
 // Ensure we have a valid access token, refresh if needed
@@ -354,13 +358,17 @@ serve(async (req) => {
   try {
     const url = new URL(req.url);
     const path = url.pathname.split("/").pop();
-    const body = await req.json();
-    if (body.user_id !== OWNER_USER_ID) {
-      return new Response(JSON.stringify({ error: "Unknown user" }), {
-        status: 403,
+    // The user comes from the JWT; a user_id in the body is overwritten, so a
+    // caller can never act on someone else's Strava data.
+    const userId = await requireUser(req);
+    if (!userId) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    const body = await req.json();
+    body.user_id = userId;
 
     switch (path) {
       case "activities":

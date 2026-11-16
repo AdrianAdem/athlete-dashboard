@@ -1,12 +1,11 @@
 // Strava OAuth2 Edge Function
 // Handles: authorize redirect, callback token exchange, status, disconnect.
 //
-// The app has no login, so these endpoints are reachable by anyone who has the
-// public function URL and the user id from the bundle. Two rules keep that
-// from turning into account takeover or token leaks:
-//   - tokens never leave the server (there is deliberately no refresh endpoint;
-//     strava-sync refreshes internally),
-//   - only the pinned owner athlete can bind to the slot (see strava_owner).
+// Every endpoint except `callback` requires the caller's Supabase JWT; the user
+// is taken from it, never from the request. `callback` is a browser redirect
+// from Strava and cannot carry a JWT, so it only parks the code; the link is
+// completed by an authenticated `finalize` call (see handleCallback).
+// Tokens never leave the server (strava-sync refreshes internally).
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -20,21 +19,23 @@ const corsHeaders = {
 const REQUIRED_SCOPE = "activity:read_all";
 const STATE_TTL_MS = 10 * 60 * 1000;
 
-// Single-user app: only this user id may start a flow. Without the check a
-// stranger could mint nonces for arbitrary ids and park their own Strava
-// account (and quota use) in our tables.
-const OWNER_USER_ID = Deno.env.get("OWNER_USER_ID") ?? "00000000-0000-0000-0000-000000000001";
-
-// Optional hard pin. When set, only this athlete can ever connect, even on a
-// fresh database where strava_owner is still empty. Without it the first
-// successful connect becomes the pinned owner.
-// An empty secret must mean "not set": Number("") is 0, which would reject the
-// real owner on every connect.
-const ownerAthleteRaw = Deno.env.get("STRAVA_OWNER_ATHLETE_ID")?.trim();
-const OWNER_ATHLETE_ID = ownerAthleteRaw ? Number(ownerAthleteRaw) : NaN;
-
 function getSupabaseAdmin() {
   return createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+}
+
+// Resolves the signed-in user from the request's bearer token, or null.
+async function requireUser(req: Request): Promise<string | null> {
+  const token = req.headers.get("Authorization")?.replace(/^Bearer\s+/i, "");
+  if (!token) return null;
+  const { data, error } = await getSupabaseAdmin().auth.getUser(token);
+  return error ? null : (data.user?.id ?? null);
+}
+
+async function sha256Hex(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 function getStravaConfig() {
@@ -60,11 +61,11 @@ function redirectToSettings(params: Record<string, string>): Response {
   return Response.redirect(`${appUrl()}/einstellungen?${new URLSearchParams(params)}`, 302);
 }
 
-// GET /strava-auth/authorize?user_id=xxx
+// GET /strava-auth/authorize
 // Issues a one-time state nonce and returns the Strava OAuth URL.
-async function handleAuthorize(url: URL): Promise<Response> {
-  const userId = url.searchParams.get("user_id");
-  if (userId !== OWNER_USER_ID) return json({ error: "Unknown user" }, 403);
+async function handleAuthorize(req: Request): Promise<Response> {
+  const userId = await requireUser(req);
+  if (!userId) return json({ error: "Unauthorized" }, 401);
 
   const state = crypto.randomUUID();
   const supabase = getSupabaseAdmin();
@@ -88,8 +89,18 @@ async function handleAuthorize(url: URL): Promise<Response> {
 }
 
 // GET /strava-auth/callback?code=xxx&state=nonce
-// Validates and consumes the state, exchanges the code, enforces the owner
-// pin, stores the token and redirects back to the app.
+// Browser redirect from Strava, so no JWT. It must not bind anything yet: the
+// nonce only proves who STARTED the flow, not whose browser finishes it. An
+// attacker could start a flow, hand the Strava link to a victim, and get the
+// victim's activities attached to the attacker's account. So the callback only
+// parks the code on the nonce and sends the browser back to the app, where the
+// signed-in user completes the link through `finalize`.
+//
+// `state` alone is not enough: the attacker created it and knows it. So the
+// callback also mints a one-time `claim`, stores only its hash, and hands the
+// value to the browser that came back from Strava. Finalize needs both, which
+// the attacker (has the state, not the claim) and the victim (has the claim,
+// not the attacker's session) can never combine.
 async function handleCallback(url: URL): Promise<Response> {
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
@@ -98,23 +109,48 @@ async function handleCallback(url: URL): Promise<Response> {
 
   if (stravaError) return redirectToSettings({ strava: "error", reason: stravaError });
   if (!code || !state) return redirectToSettings({ strava: "error", reason: "missing_code" });
+  if (!grantedScope.split(",").includes(REQUIRED_SCOPE)) {
+    return redirectToSettings({ strava: "error", reason: "missing_scope" });
+  }
 
   const supabase = getSupabaseAdmin();
+  const claim = crypto.randomUUID();
+  // Only a fresh nonce without a parked code qualifies, so it cannot be replayed.
+  const { data: parked } = await supabase
+    .from("strava_oauth_states")
+    .update({ code, scope: grantedScope, claim_hash: await sha256Hex(claim) })
+    .eq("state", state)
+    .is("code", null)
+    .gt("created_at", new Date(Date.now() - STATE_TTL_MS).toISOString())
+    .select("state")
+    .maybeSingle();
+  if (!parked) return redirectToSettings({ strava: "error", reason: "invalid_state" });
 
-  // Consume the nonce in one statement so it can never be replayed.
+  return redirectToSettings({ strava: "pending", state, claim });
+}
+
+// POST /strava-auth/finalize {state, claim}
+// Completes the link for the signed-in user, and only if that user started the
+// flow. The delete is scoped to user_id, so a foreign nonce is simply not found.
+async function handleFinalize(req: Request): Promise<Response> {
+  const userId = await requireUser(req);
+  if (!userId) return json({ error: "Unauthorized" }, 401);
+  const body = await req.json().catch(() => ({}));
+  const state = typeof body.state === "string" ? body.state : "";
+  const claim = typeof body.claim === "string" ? body.claim : "";
+  if (!state || !claim) return json({ error: "invalid_state" }, 400);
+
+  const supabase = getSupabaseAdmin();
   const { data: stateRow } = await supabase
     .from("strava_oauth_states")
     .delete()
     .eq("state", state)
-    .select("user_id, created_at")
+    .eq("user_id", userId)
+    .eq("claim_hash", await sha256Hex(claim))
+    .select("code, scope, created_at")
     .maybeSingle();
-  if (!stateRow || Date.now() - new Date(stateRow.created_at).getTime() > STATE_TTL_MS) {
-    return redirectToSettings({ strava: "error", reason: "invalid_state" });
-  }
-  const userId = stateRow.user_id as string;
-
-  if (!grantedScope.split(",").includes(REQUIRED_SCOPE)) {
-    return redirectToSettings({ strava: "error", reason: "missing_scope" });
+  if (!stateRow?.code || Date.now() - new Date(stateRow.created_at).getTime() > STATE_TTL_MS) {
+    return json({ error: "invalid_state" }, 400);
   }
 
   const { clientId, clientSecret } = getStravaConfig();
@@ -124,35 +160,35 @@ async function handleCallback(url: URL): Promise<Response> {
     body: JSON.stringify({
       client_id: clientId,
       client_secret: clientSecret,
-      code,
+      code: stateRow.code,
       grant_type: "authorization_code",
     }),
   });
   if (!tokenRes.ok) {
     console.error("Strava token exchange failed:", tokenRes.status);
-    return redirectToSettings({ strava: "error", reason: "token_exchange_failed" });
+    return json({ error: "token_exchange_failed" }, 502);
   }
   const tokenData = await tokenRes.json();
   const athleteId = Number(tokenData.athlete?.id);
-  if (Number.isFinite(OWNER_ATHLETE_ID) && athleteId !== OWNER_ATHLETE_ID) {
-    console.error("Rejected Strava connect from non-configured athlete", athleteId);
-    return redirectToSettings({ strava: "error", reason: "wrong_account" });
-  }
+  if (!Number.isFinite(athleteId)) return json({ error: "token_exchange_failed" }, 502);
 
-  const { data: owner } = await supabase
+  // One Strava athlete belongs to one app account. The unique index on
+  // strava_owner.athlete_id backs this check against a race.
+  const { data: takenBy } = await supabase
     .from("strava_owner")
-    .select("athlete_id")
-    .eq("user_id", userId)
+    .select("user_id")
+    .eq("athlete_id", athleteId)
+    .neq("user_id", userId)
     .maybeSingle();
-  if (owner && Number(owner.athlete_id) !== athleteId) {
-    console.error("Rejected Strava connect from non-owner athlete", athleteId);
-    return redirectToSettings({ strava: "error", reason: "wrong_account" });
-  }
-  if (!owner) {
-    const { error: pinError } = await supabase
-      .from("strava_owner")
-      .insert({ user_id: userId, athlete_id: athleteId });
-    if (pinError) return redirectToSettings({ strava: "error", reason: "save_failed" });
+  if (takenBy) return json({ error: "athlete_in_use" }, 409);
+
+  const { error: pinError } = await supabase
+    .from("strava_owner")
+    .upsert({ user_id: userId, athlete_id: athleteId }, { onConflict: "user_id" });
+  if (pinError) {
+    return pinError.code === "23505"
+      ? json({ error: "athlete_in_use" }, 409)
+      : json({ error: "save_failed" }, 500);
   }
 
   const { error: dbError } = await supabase.from("strava_tokens").upsert(
@@ -163,23 +199,22 @@ async function handleCallback(url: URL): Promise<Response> {
       access_token: tokenData.access_token,
       refresh_token: tokenData.refresh_token,
       expires_at: tokenData.expires_at,
-      scope: grantedScope,
+      scope: stateRow.scope,
       updated_at: new Date().toISOString(),
     },
     { onConflict: "user_id" },
   );
   if (dbError) {
     console.error("Storing Strava token failed:", dbError.message);
-    return redirectToSettings({ strava: "error", reason: "save_failed" });
+    return json({ error: "save_failed" }, 500);
   }
-
-  return redirectToSettings({ strava: "connected" });
+  return json({ success: true });
 }
 
-// GET /strava-auth/status?user_id=xxx — connection status, no token material
-async function handleStatus(url: URL): Promise<Response> {
-  const userId = url.searchParams.get("user_id");
-  if (userId !== OWNER_USER_ID) return json({ error: "Unknown user" }, 403);
+// GET /strava-auth/status — connection status, no token material
+async function handleStatus(req: Request): Promise<Response> {
+  const userId = await requireUser(req);
+  if (!userId) return json({ error: "Unauthorized" }, 401);
 
   const { data } = await getSupabaseAdmin()
     .from("strava_tokens")
@@ -196,15 +231,14 @@ async function handleStatus(url: URL): Promise<Response> {
 }
 
 // POST /strava-auth/disconnect — remove token and deauthorize at Strava.
-// Still callable without auth (no login exists), but the owner pin survives,
-// so the worst a stranger can do is force a reconnect.
-async function handleDisconnect(body: { user_id: string }): Promise<Response> {
-  if (body.user_id !== OWNER_USER_ID) return json({ error: "Unknown user" }, 403);
+async function handleDisconnect(req: Request): Promise<Response> {
+  const userId = await requireUser(req);
+  if (!userId) return json({ error: "Unauthorized" }, 401);
   const supabase = getSupabaseAdmin();
   const { data: token } = await supabase
     .from("strava_tokens")
     .select("access_token")
-    .eq("user_id", body.user_id)
+    .eq("user_id", userId)
     .maybeSingle();
 
   if (token?.access_token) {
@@ -215,8 +249,10 @@ async function handleDisconnect(body: { user_id: string }): Promise<Response> {
     }).catch((err) => console.error("Strava deauthorize failed:", err));
   }
 
-  const { error } = await supabase.from("strava_tokens").delete().eq("user_id", body.user_id);
+  const { error } = await supabase.from("strava_tokens").delete().eq("user_id", userId);
   if (error) return json({ error: "Disconnect failed" }, 500);
+  // Release the athlete too, so the user can connect a different Strava account.
+  await supabase.from("strava_owner").delete().eq("user_id", userId);
   return json({ success: true });
 }
 
@@ -227,13 +263,15 @@ serve(async (req) => {
     const url = new URL(req.url);
     switch (url.pathname.split("/").pop()) {
       case "authorize":
-        return await handleAuthorize(url);
+        return await handleAuthorize(req);
       case "callback":
         return await handleCallback(url);
+      case "finalize":
+        return await handleFinalize(req);
       case "status":
-        return await handleStatus(url);
+        return await handleStatus(req);
       case "disconnect":
-        return await handleDisconnect(await req.json());
+        return await handleDisconnect(req);
       default:
         return json({ error: "Unknown endpoint" }, 404);
     }

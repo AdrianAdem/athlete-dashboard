@@ -10,6 +10,7 @@
 // descriptive User-Agent.
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -23,6 +24,34 @@ const OFF_SEARCH = "https://search.openfoodfacts.org/search";
 const NUTRIMENT_FIELDS =
   "code,product_name,product_name_de,brands,serving_size,serving_quantity,serving_quantity_unit,nutriments";
 const BARCODE = /^\d{6,14}$/;
+
+// Resolves the signed-in user from the request's bearer token, or null.
+async function requireUser(req: Request): Promise<string | null> {
+  const token = req.headers.get("Authorization")?.replace(/^Bearer\s+/i, "");
+  if (!token) return null;
+  const admin = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+  );
+  const { data, error } = await admin.auth.getUser(token);
+  return error ? null : (data.user?.id ?? null);
+}
+
+// Paid AI calls are capped per user and hour by an atomic counter in the
+// database (migration 016), so the cap holds across function instances.
+const AI_LIMIT_PER_HOUR = 20;
+async function aiAllowed(userId: string): Promise<boolean> {
+  const admin = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+  );
+  const { data, error } = await admin.rpc("bump_ai_usage", {
+    p_user: userId,
+    p_limit: AI_LIMIT_PER_HOUR,
+  });
+  if (error) throw new Error("Limit-Prüfung fehlgeschlagen");
+  return data === true;
+}
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -229,8 +258,11 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
+    const userId = await requireUser(req);
+    if (!userId) return json({ error: "Unauthorized" }, 401);
     const path = new URL(req.url).pathname.split("/").pop();
-    const body = await req.json();
+    const body = await req.json().catch(() => null);
+    if (!body || typeof body !== "object") return json({ error: "Ungültige Anfrage" }, 400);
     for (const key of ["barcode", "query", "food_id"] as const) {
       if (typeof body[key] === "string" && body[key].length > 200) {
         return json({ error: `${key} zu lang` }, 400);
@@ -245,6 +277,8 @@ serve(async (req) => {
       case "search":
         return json(await handleSearch(String(body.query ?? ""), Number(body.page) || 0));
       case "ai":
+        if (!(await aiAllowed(userId)))
+          return json({ error: "Zu viele KI-Anfragen, bitte später erneut." }, 429);
         return json(await handleAI(String(body.text ?? "")));
       default:
         return json({ error: "Unknown endpoint" }, 404);

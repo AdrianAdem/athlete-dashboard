@@ -1,12 +1,14 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Save, Download, Check, AlertCircle, Link2, Unlink, RefreshCw } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { uid, useAuth } from "@/lib/auth";
 import { IS_DEMO } from "@/lib/demo-client";
+import { deleteAccount } from "@/lib/account-service";
 import { Input } from "@/components/ui/input";
 import {
   getStravaStatus,
+  finalizeStravaConnection,
   getStravaAuthUrl,
   disconnectStrava,
   syncStravaActivities,
@@ -20,14 +22,15 @@ type SaveStatus = "idle" | "saving" | "saved" | "error";
 const STRAVA_ERROR_MESSAGES: Record<string, string> = {
   access_denied: "Strava-Zugriff wurde abgelehnt",
   missing_scope: "Bitte Zugriff auf alle Aktivitäten erlauben",
-  wrong_account: "Das ist nicht das verknüpfte Strava-Konto",
+  athlete_in_use: "Dieses Strava-Konto ist schon mit einem anderen Konto verbunden",
   invalid_state: "Login abgelaufen, bitte erneut verbinden",
   token_exchange_failed: "Strava hat den Login nicht bestätigt",
   save_failed: "Verbindung konnte nicht gespeichert werden",
 };
 
 export function SettingsPage() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const finalizedState = useRef<string | null>(null);
   const [status, setStatus] = useState<SaveStatus>("idle");
   const [errorMsg, setErrorMsg] = useState("");
 
@@ -55,6 +58,10 @@ export function SettingsPage() {
   const [fatGoal, setFatGoal] = useState<number | null>(null);
   const [waterGoal, setWaterGoal] = useState(3000);
   const { session, signOut } = useAuth();
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteWord, setDeleteWord] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [exportMsg, setExportMsg] = useState<string | null>(null);
 
@@ -85,9 +92,11 @@ export function SettingsPage() {
 
   // Strava status + callback handling
   useEffect(() => {
-    getStravaStatus()
-      .then(setStravaStatus)
-      .catch(() => setStravaMsg("Strava-Status nicht erreichbar"));
+    const loadStatus = () =>
+      getStravaStatus()
+        .then(setStravaStatus)
+        .catch(() => setStravaMsg("Strava-Status nicht erreichbar"));
+    void loadStatus();
     const today = new Date();
     const weekAgo = new Date();
     weekAgo.setDate(today.getDate() - 7);
@@ -102,12 +111,30 @@ export function SettingsPage() {
       })
       .catch(() => {});
     const stravaParam = searchParams.get("strava");
-    if (stravaParam === "connected") setStravaMsg("Strava erfolgreich verbunden!");
+    const stravaState = searchParams.get("state");
+    const stravaClaim = searchParams.get("claim");
+    if (stravaParam === "pending" && stravaState && stravaClaim) {
+      // Strava sent the browser back; finish the link as the signed-in user.
+      // The one-time values leave the URL at once, and the ref stops a second
+      // run (StrictMode, back navigation) from spending them twice.
+      setSearchParams({}, { replace: true });
+      if (finalizedState.current === stravaState) return;
+      finalizedState.current = stravaState;
+      setStravaMsg("Verbinde mit Strava...");
+      finalizeStravaConnection(stravaState, stravaClaim)
+        .then(() => {
+          setStravaMsg("Strava erfolgreich verbunden!");
+          return loadStatus();
+        })
+        .catch((err: Error) =>
+          setStravaMsg(STRAVA_ERROR_MESSAGES[err.message] ?? "Strava-Verbindung fehlgeschlagen"),
+        );
+    } else if (stravaParam === "connected") setStravaMsg("Strava erfolgreich verbunden!");
     else if (stravaParam === "error") {
       const reason = searchParams.get("reason") ?? "";
       setStravaMsg(STRAVA_ERROR_MESSAGES[reason] ?? "Strava-Verbindung fehlgeschlagen");
     }
-  }, [searchParams]);
+  }, [searchParams, setSearchParams]);
 
   const connectStrava = async () => {
     setStravaLoading(true);
@@ -179,6 +206,17 @@ export function SettingsPage() {
   // Full backup of everything the user owns. The earlier list missed routines,
   // cardio, custom foods, the profile and Garmin data, so the "backup" silently
   // lacked them.
+  const confirmDelete = async () => {
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteAccount();
+    } catch (err) {
+      setDeleteError((err as Error).message);
+      setDeleting(false);
+    }
+  };
+
   const exportData = async () => {
     setExporting(true);
     setExportMsg(null);
@@ -502,6 +540,53 @@ export function SettingsPage() {
           >
             Abmelden
           </button>
+        )}
+        {!IS_DEMO && !deleteOpen && (
+          <button
+            onClick={() => setDeleteOpen(true)}
+            className="w-full py-2 text-xs text-red-400/80"
+          >
+            Konto löschen
+          </button>
+        )}
+        {!IS_DEMO && deleteOpen && (
+          <div className="space-y-2 rounded-lg border border-red-500/30 p-3">
+            <p className="text-xs text-neutral-300">
+              Löscht dein Konto und alle Daten endgültig. Das lässt sich nicht rückgängig machen.
+              Vorher exportieren, falls du die Daten behalten willst. Zum Bestätigen LÖSCHEN
+              eintippen.
+            </p>
+            <input
+              value={deleteWord}
+              onChange={(e) => setDeleteWord(e.target.value)}
+              aria-label="Zum Bestätigen LÖSCHEN eintippen"
+              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  setDeleteOpen(false);
+                  setDeleteWord("");
+                  setDeleteError(null);
+                }}
+                className="flex-1 rounded-lg bg-neutral-800 py-2 text-sm text-neutral-300"
+              >
+                Abbrechen
+              </button>
+              <button
+                onClick={() => void confirmDelete()}
+                disabled={deleteWord !== "LÖSCHEN" || deleting}
+                className="flex-1 rounded-lg bg-red-600 py-2 text-sm font-medium text-white disabled:opacity-40"
+              >
+                {deleting ? "Löscht..." : "Endgültig löschen"}
+              </button>
+            </div>
+            {deleteError && (
+              <p role="alert" className="text-xs text-red-400">
+                {deleteError}
+              </p>
+            )}
+          </div>
         )}
       </div>
     </div>

@@ -1,0 +1,18 @@
+# Edge function JWT settings, documented in the repo (the dashboard is the
+# source of truth at deploy time). strava-auth stays public at the gateway
+# because `callback` is a browser redirect from Strava; every other endpoint of
+# it checks the bearer token itself. The functions below verify the token in
+# code via auth.getUser(), so the gateway check is switched off for the same
+# reason: one consistent rule instead of two.
+
+[functions.strava-auth]
+verify_jwt = false
+
+[functions.strava-sync]
+verify_jwt = false
+
+[functions.food-lookup]
+verify_jwt = false
+
+[functions.delete-account]
+verify_jwt = false
