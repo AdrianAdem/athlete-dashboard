@@ -233,17 +233,31 @@ export function WorkoutProvider({ children }: { children: ReactNode }) {
     // One query for all exercises. On error best_weight stays undefined, so the
     // PR check falls back to the last session instead of inventing a record.
     const bestByExercise = new Map<string, number>();
-    const { data: histLogs, error: histError } = await supabase
-      .from("training_logs")
-      .select("exercise_id, sets_completed")
-      .eq("user_id", USER_ID)
-      .in(
-        "exercise_id",
-        (exs as TrainingExercise[]).map((e) => e.id),
-      );
-    if (!histError) {
-      for (const l of histLogs ?? []) {
-        const id = l.exercise_id as string;
+    // Paged (API caps a response at 1000 rows), newest first so a cap only
+    // drops the oldest history.
+    const histLogs: { exercise_id: string; sets_completed: unknown }[] = [];
+    let histFailed = (exs as TrainingExercise[]).length === 0;
+    for (let from = 0; !histFailed && from < 5000; from += 1000) {
+      const { data: page, error: pageError } = await supabase
+        .from("training_logs")
+        .select("exercise_id, sets_completed")
+        .eq("user_id", USER_ID)
+        .in(
+          "exercise_id",
+          (exs as TrainingExercise[]).map((e) => e.id),
+        )
+        .order("date", { ascending: false })
+        .range(from, from + 999);
+      if (pageError || !page) {
+        histFailed = true;
+        break;
+      }
+      histLogs.push(...page);
+      if (page.length < 1000) break;
+    }
+    if (!histFailed) {
+      for (const l of histLogs) {
+        const id = l.exercise_id;
         const sets = (l.sets_completed as SetLog[] | null) ?? [];
         const max = Math.max(0, ...sets.map((x) => x.weight_kg).filter(Number.isFinite));
         bestByExercise.set(id, Math.max(bestByExercise.get(id) ?? 0, max));
