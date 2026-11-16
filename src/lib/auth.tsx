@@ -1,7 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
+import { Browser } from "@capacitor/browser";
 import { supabase } from "./supabase";
+import { isNative, authRedirectUrl } from "./platform";
 import { IS_DEMO } from "./demo-client";
 import { USER_ID as DEMO_USER_ID } from "./constants";
 
@@ -35,6 +37,9 @@ interface AuthContextValue {
   loading: boolean;
   /** True after the user opened a password-reset link; they must set a new password. */
   recovering: boolean;
+  /** Last error from a link that opened the app (expired mail link, provider abort). */
+  authError: string | null;
+  reportAuthError: (message: string) => void;
   signIn: (email: string, password: string) => Promise<string | null>;
   /** Resolves to an error message, or "confirm" when a confirmation mail was sent. */
   signUp: (email: string, password: string) => Promise<string | null>;
@@ -47,12 +52,14 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 // Supabase redirects back to the app root, under the Vite base path.
-const appUrl = () => `${window.location.origin}${import.meta.env.BASE_URL}`;
+const appUrl = () => authRedirectUrl(window.location.origin, import.meta.env.BASE_URL);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [recovering, setRecovering] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const reportAuthError = useCallback((message: string) => setAuthError(germanError(message)), []);
 
   useEffect(() => {
     const apply = (next: Session | null) => {
@@ -88,11 +95,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signInWithProvider = useCallback(async (provider: OAuthProvider) => {
-    const { error } = await supabase.auth.signInWithOAuth({
+    const { data, error } = await supabase.auth.signInWithOAuth({
       provider,
-      options: { redirectTo: appUrl() },
+      // In the shell the provider page opens in the system browser sheet and
+      // returns through the app's URL scheme instead of replacing the web view.
+      options: { redirectTo: appUrl(), skipBrowserRedirect: isNative },
     });
-    return error ? germanError(error.message) : null;
+    if (error) return germanError(error.message);
+    if (isNative && data.url) await Browser.open({ url: data.url });
+    return null;
   }, []);
 
   const sendPasswordReset = useCallback(async (email: string) => {
@@ -118,6 +129,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       session,
       loading,
       recovering,
+      authError,
+      reportAuthError,
       signIn,
       signUp,
       signInWithProvider,
@@ -129,6 +142,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       session,
       loading,
       recovering,
+      authError,
+      reportAuthError,
       signIn,
       signUp,
       signInWithProvider,

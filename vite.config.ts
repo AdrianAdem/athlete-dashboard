@@ -4,9 +4,11 @@ import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 
 const isDemo = process.env.VITE_DEMO === "1";
+// CAP=1 builds the bundle for the iOS shell, which serves it from the root.
+const isNativeBuild = process.env.CAP === "1";
 
 export default defineConfig({
-  base: "/athlete-dashboard/",
+  base: isNativeBuild ? "/" : "/athlete-dashboard/",
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: [
