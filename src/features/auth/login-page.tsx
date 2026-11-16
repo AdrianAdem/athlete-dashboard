@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { isNative } from "@/lib/platform";
 import { LegalLinks } from "@/features/legal/legal-layout";
 import type { FormEvent } from "react";
 import { useAuth } from "@/lib/auth";
@@ -19,7 +20,7 @@ const TITLES: Record<Mode, string> = {
 };
 
 export function LoginPage() {
-  const { signIn, signUp, signInWithProvider, sendPasswordReset } = useAuth();
+  const { signIn, signUp, signInWithProvider, sendPasswordReset, authError } = useAuth();
   const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -43,14 +44,22 @@ export function LoginPage() {
       if (mode === "reset") {
         const err = await sendPasswordReset(email.trim());
         if (err) setError(err);
-        else setInfo("Wenn die Adresse existiert, ist eine Mail mit einem Link unterwegs.");
+        else
+          setInfo(
+            "Wenn die Adresse existiert, ist eine Mail mit einem Link unterwegs." +
+              (isNative ? " Öffne den Link auf diesem Gerät." : ""),
+          );
         return;
       }
       const err =
         mode === "signin"
           ? await signIn(email.trim(), password)
           : await signUp(email.trim(), password);
-      if (err === "confirm") setInfo("Bestätigungsmail gesendet. Link öffnen, dann anmelden.");
+      if (err === "confirm")
+        setInfo(
+          "Bestätigungsmail gesendet. Link öffnen, dann anmelden." +
+            (isNative ? " Öffne den Link auf diesem Gerät." : ""),
+        );
       else if (err) setError(err);
     } finally {
       setBusy(false);
@@ -95,9 +104,9 @@ export function LoginPage() {
           </Button>
         </form>
 
-        {error && (
+        {(error ?? authError) && (
           <p role="alert" className="text-sm text-red-400">
-            {error}
+            {error ?? authError}
           </p>
         )}
         {info && (

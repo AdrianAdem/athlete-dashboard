@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Layout } from "@/components/layout";
 import { WorkoutProvider } from "@/lib/workout-context";
 import { AuthProvider } from "@/lib/auth";
+import { DeepLinkListener } from "@/lib/deep-link-listener";
 import { AuthGate } from "@/features/auth/auth-gate";
 import { ConsentGate } from "@/features/auth/consent-gate";
 
@@ -69,6 +70,9 @@ const LiveTrainingPage = lazy(() =>
   import("@/features/ausdauer/live-training-page").then((m) => ({ default: m.LiveTrainingPage })),
 );
 
+// "/athlete-dashboard/" on Pages, "/" inside the iOS shell.
+const ROUTER_BASENAME = import.meta.env.BASE_URL.replace(/\/$/, "") || "/";
+
 function Loading() {
   return (
     <div className="flex min-h-screen items-center justify-center text-neutral-500">Laden...</div>
@@ -128,10 +132,11 @@ function GatedApp() {
 // deciding whether to sign up must be able to read them without an account.
 export default function App() {
   return (
-    <BrowserRouter basename="/athlete-dashboard">
+    <BrowserRouter basename={ROUTER_BASENAME}>
       {/* The provider stays above the routes so opening a legal page from the
           login form neither reloads the session nor drops what was typed. */}
       <AuthProvider>
+        <DeepLinkListener />
         <Suspense fallback={<Loading />}>
           <Routes>
             <Route path="/datenschutz" element={<PrivacyPage />} />

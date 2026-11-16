@@ -57,8 +57,21 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
-function redirectToSettings(params: Record<string, string>): Response {
-  return Response.redirect(`${appUrl()}/einstellungen?${new URLSearchParams(params)}`, 302);
+// Where the browser goes after Strava: the web page, or the iOS app through its
+// URL scheme. Built by hand because Response.redirect only guarantees http(s).
+// Must match APP_SCHEME in src/lib/platform.ts (edge functions cannot import it).
+const APP_SCHEME = "de.latentdev.athlete";
+
+function redirectToSettings(
+  params: Record<string, string>,
+  client: "web" | "native" = "web",
+): Response {
+  const query = new URLSearchParams(params);
+  const location =
+    client === "native"
+      ? `${APP_SCHEME}://einstellungen?${query}`
+      : `${appUrl()}/einstellungen?${query}`;
+  return new Response(null, { status: 302, headers: { Location: location } });
 }
 
 // GET /strava-auth/authorize
@@ -74,7 +87,14 @@ async function handleAuthorize(req: Request): Promise<Response> {
     .from("strava_oauth_states")
     .delete()
     .lt("created_at", new Date(Date.now() - STATE_TTL_MS).toISOString());
-  const { error } = await supabase.from("strava_oauth_states").insert({ state, user_id: userId });
+  // The column only exists after migration 019; sending it for the web flow
+  // too would break web connects if the function were deployed first.
+  const isNativeClient = new URL(req.url).searchParams.get("client") === "native";
+  const { error } = await supabase
+    .from("strava_oauth_states")
+    .insert(
+      isNativeClient ? { state, user_id: userId, client: "native" } : { state, user_id: userId },
+    );
   if (error) return json({ error: "Could not start Strava login" }, 500);
 
   const { clientId, redirectUri } = getStravaConfig();
@@ -107,13 +127,27 @@ async function handleCallback(url: URL): Promise<Response> {
   const stravaError = url.searchParams.get("error");
   const grantedScope = url.searchParams.get("scope") ?? "";
 
-  if (stravaError) return redirectToSettings({ strava: "error", reason: stravaError });
-  if (!code || !state) return redirectToSettings({ strava: "error", reason: "missing_code" });
-  if (!grantedScope.split(",").includes(REQUIRED_SCOPE)) {
-    return redirectToSettings({ strava: "error", reason: "missing_scope" });
+  const supabase = getSupabaseAdmin();
+  // Which front end started this flow decides where every outcome, including
+  // errors, sends the browser. Unknown or missing state falls back to the web.
+  let client: "web" | "native" = "web";
+  if (state) {
+    const { data: row } = await supabase
+      .from("strava_oauth_states")
+      .select("client")
+      .eq("state", state)
+      .maybeSingle();
+    if (row?.client === "native") client = "native";
   }
 
-  const supabase = getSupabaseAdmin();
+  if (stravaError) return redirectToSettings({ strava: "error", reason: stravaError }, client);
+  if (!code || !state) {
+    return redirectToSettings({ strava: "error", reason: "missing_code" }, client);
+  }
+  if (!grantedScope.split(",").includes(REQUIRED_SCOPE)) {
+    return redirectToSettings({ strava: "error", reason: "missing_scope" }, client);
+  }
+
   const claim = crypto.randomUUID();
   // Only a fresh nonce without a parked code qualifies, so it cannot be replayed.
   const { data: parked } = await supabase
@@ -124,9 +158,9 @@ async function handleCallback(url: URL): Promise<Response> {
     .gt("created_at", new Date(Date.now() - STATE_TTL_MS).toISOString())
     .select("state")
     .maybeSingle();
-  if (!parked) return redirectToSettings({ strava: "error", reason: "invalid_state" });
+  if (!parked) return redirectToSettings({ strava: "error", reason: "invalid_state" }, client);
 
-  return redirectToSettings({ strava: "pending", state, claim });
+  return redirectToSettings({ strava: "pending", state, claim }, client);
 }
 
 // POST /strava-auth/finalize {state, claim}

@@ -5,6 +5,9 @@ import { supabase } from "@/lib/supabase";
 import { uid, useAuth } from "@/lib/auth";
 import { IS_DEMO } from "@/lib/demo-client";
 import { deleteAccount } from "@/lib/account-service";
+import { Browser } from "@capacitor/browser";
+import { isNative } from "@/lib/platform";
+import { saveExportFile } from "@/lib/export-file";
 import { hasConsent, withdrawConsent } from "@/lib/consent";
 import { LegalLinks } from "@/features/legal/legal-layout";
 import { Input } from "@/components/ui/input";
@@ -153,7 +156,15 @@ export function SettingsPage() {
   const connectStrava = async () => {
     setStravaLoading(true);
     try {
-      window.location.href = await getStravaAuthUrl();
+      const url = await getStravaAuthUrl();
+      // In the iOS shell the Strava login opens in the system browser sheet and
+      // comes back through a deep link; a web view navigation could not return.
+      if (isNative) {
+        await Browser.open({ url });
+        setStravaLoading(false);
+      } else {
+        window.location.href = url;
+      }
     } catch (err) {
       setStravaMsg((err as Error).message);
       setStravaLoading(false);
@@ -284,32 +295,7 @@ export function SettingsPage() {
       allData.routine_items = items ?? [];
 
       const fileName = `athlete-dashboard-export-${todayString()}.json`;
-      const file = new File([JSON.stringify(allData, null, 2)], fileName, {
-        type: "application/json",
-      });
-      const download = () => {
-        const url = URL.createObjectURL(file);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = fileName;
-        a.click();
-        // Revoking immediately can cancel the download in Safari.
-        setTimeout(() => URL.revokeObjectURL(url), 10_000);
-      };
-      // The share sheet ("In Dateien sichern") is the reliable save path in an
-      // installed iOS web app. Safari refuses share() once the tap that
-      // started the export is "used up" by the slow loading above
-      // (NotAllowedError); fall back to a plain download then.
-      if (navigator.canShare?.({ files: [file] })) {
-        try {
-          await navigator.share({ files: [file], title: "Athlete Dashboard Export" });
-        } catch (err) {
-          if ((err as Error).name === "NotAllowedError") download();
-          else if ((err as Error).name !== "AbortError") throw err;
-        }
-      } else {
-        download();
-      }
+      await saveExportFile(fileName, JSON.stringify(allData, null, 2));
     } catch (err) {
       setExportMsg(`Export fehlgeschlagen: ${(err as Error).message}`);
     }

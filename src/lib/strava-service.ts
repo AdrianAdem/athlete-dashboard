@@ -2,6 +2,7 @@
 import { supabase, functionHeaders } from "./supabase";
 import { uid } from "./auth";
 import { IS_DEMO } from "./demo-client";
+import { isNative } from "./platform";
 
 const FUNCTIONS_URL = import.meta.env.VITE_SUPABASE_URL + "/functions/v1";
 
@@ -54,7 +55,10 @@ export async function getStravaStatus(): Promise<StravaStatus> {
 
 export async function getStravaAuthUrl(): Promise<string> {
   if (IS_DEMO) throw new Error("Im Demo-Modus nicht verfügbar");
-  const data = await stravaFetch<{ url: string }>(`strava-auth/authorize`);
+  const data = await stravaFetch<{ url: string }>(
+    // The function returns to the app's URL scheme instead of the web page.
+    `strava-auth/authorize${isNative ? "?client=native" : ""}`,
+  );
   return data.url;
 }
 

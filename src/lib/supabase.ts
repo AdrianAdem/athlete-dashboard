@@ -1,5 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { demoClient, IS_DEMO } from "./demo-client";
+import { isNative } from "./platform";
+import { preferencesStorage } from "./native-storage";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
@@ -13,7 +15,22 @@ if (!IS_DEMO && (!supabaseUrl || !supabaseAnonKey)) {
 // keeps every call site unchanged.
 export const supabase: SupabaseClient = IS_DEMO
   ? (demoClient as unknown as SupabaseClient)
-  : createClient(supabaseUrl, supabaseAnonKey);
+  : createClient(
+      supabaseUrl,
+      supabaseAnonKey,
+      isNative
+        ? {
+            // The shell is not a browser address bar: links come back as
+            // deep links (see deep-links.ts), so PKCE with an explicit code
+            // exchange replaces reading tokens from the URL hash.
+            auth: {
+              flowType: "pkce",
+              detectSessionInUrl: false,
+              storage: preferencesStorage,
+            },
+          }
+        : undefined,
+    );
 
 /** Auth headers for edge-function calls: the user's JWT when signed in. */
 export async function functionHeaders(): Promise<Record<string, string>> {
