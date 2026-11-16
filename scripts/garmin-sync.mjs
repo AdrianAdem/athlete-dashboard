@@ -46,7 +46,9 @@ const GARMIN_EMAIL = process.env.GARMIN_EMAIL;
 const GARMIN_PASSWORD = process.env.GARMIN_PASSWORD;
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL ?? process.env.SUPABASE_URL;
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const USER_ID = "00000000-0000-0000-0000-000000000001";
+// Auth user id the data belongs to (Supabase dashboard > Authentication > Users).
+// No default on purpose: a wrong id would silently write another user's rows.
+const USER_ID = process.env.GARMIN_USER_ID;
 
 // Every request gets a timeout. launchd does not start a new run while the
 // previous one is still alive, so one hung request stalled the sync for good.
@@ -61,6 +63,7 @@ function requireEnv() {
   if (!GARMIN_PASSWORD) missing.push("GARMIN_PASSWORD");
   if (!SUPABASE_URL) missing.push("VITE_SUPABASE_URL");
   if (!SERVICE_ROLE) missing.push("SUPABASE_SERVICE_ROLE_KEY");
+  if (!USER_ID) missing.push("GARMIN_USER_ID");
   if (missing.length) {
     console.error(`Fehlende Env-Variablen: ${missing.join(", ")}`);
     console.error("Trage sie in athlete-dashboard/.env ein (siehe .env.example).");
