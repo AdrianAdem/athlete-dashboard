@@ -3,10 +3,10 @@
 // legal-config test fails while a TODO placeholder is left.
 export const LEGAL = {
   name: "Adrian Ademovic",
-  street: "TODO Straße und Hausnummer",
-  city: "TODO PLZ Dietzenbach",
-  email: "TODO kontakt@example.de",
+  street: "Altes Sägewerk 8",
+  city: "63128 Dietzenbach",
+  email: "hello@latentdev.de",
   // Shown in the imprint when the app is run under a business name.
-  businessName: "",
+  businessName: "Latent",
   updated: "16. November 2026",
 } as const;
