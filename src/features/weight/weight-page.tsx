@@ -11,7 +11,7 @@ import {
   Legend,
 } from "recharts";
 import { supabase } from "@/lib/supabase";
-import { USER_ID } from "@/lib/constants";
+import { uid } from "@/lib/auth";
 import { todayString, toLocalDateString } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -73,7 +73,7 @@ export function WeightPage() {
     const { data } = await supabase
       .from("weight_log")
       .select("*")
-      .eq("user_id", USER_ID)
+      .eq("user_id", uid())
       .gte("date", toLocalDateString(since))
       .order("date", { ascending: true });
     if (data) setLogs(data as WeightLog[]);
@@ -129,7 +129,7 @@ export function WeightPage() {
       ? await supabase.from("weight_log").update(fields).eq("id", today.id).select().single()
       : await supabase
           .from("weight_log")
-          .insert({ user_id: USER_ID, date: todayString(), ...fields })
+          .insert({ user_id: uid(), date: todayString(), ...fields })
           .select()
           .single();
     setSaving(false);

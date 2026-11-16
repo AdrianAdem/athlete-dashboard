@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import { Save, Download, Check, AlertCircle, Link2, Unlink, RefreshCw } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
-import { USER_ID } from "@/lib/constants";
+import { uid, useAuth } from "@/lib/auth";
+import { IS_DEMO } from "@/lib/demo-client";
 import { Input } from "@/components/ui/input";
 import {
   getStravaStatus,
@@ -53,6 +54,7 @@ export function SettingsPage() {
   const [carbsGoal, setCarbsGoal] = useState<number | null>(null);
   const [fatGoal, setFatGoal] = useState<number | null>(null);
   const [waterGoal, setWaterGoal] = useState(3000);
+  const { session, signOut } = useAuth();
   const [exporting, setExporting] = useState(false);
   const [exportMsg, setExportMsg] = useState<string | null>(null);
 
@@ -61,7 +63,7 @@ export function SettingsPage() {
       const { data, error } = await supabase
         .from("user_profiles")
         .select("*")
-        .eq("id", USER_ID)
+        .eq("id", uid())
         .single();
       if (error) {
         console.error("Profile load error:", error);
@@ -161,7 +163,7 @@ export function SettingsPage() {
         fat_goal: fatGoal || null,
         water_goal_ml: waterGoal,
       })
-      .eq("id", USER_ID);
+      .eq("id", uid());
 
     if (error) {
       console.error("Profile save error:", error);
@@ -206,7 +208,7 @@ export function SettingsPage() {
         // user_profiles is keyed by id; training_exercises hangs off plans.
         const query =
           table === "user_profiles"
-            ? supabase.from(table).select("*").eq("id", USER_ID)
+            ? supabase.from(table).select("*").eq("id", uid())
             : table === "training_exercises"
               ? supabase
                   .from(table)
@@ -215,7 +217,7 @@ export function SettingsPage() {
                     "plan_id",
                     ((allData.training_plans ?? []) as { id: string }[]).map((p) => p.id),
                   )
-              : supabase.from(table).select("*").eq("user_id", USER_ID);
+              : supabase.from(table).select("*").eq("user_id", uid());
         const { data, error } = await query;
         if (error) throw new Error(`${table}: ${error.message}`);
         allData[table] = data ?? [];
@@ -489,6 +491,19 @@ export function SettingsPage() {
           {exportMsg}
         </p>
       )}
+
+      {/* Account */}
+      <div className="rounded-xl bg-card p-4 space-y-3">
+        <p className="text-xs text-neutral-400">Angemeldet als {session?.user.email ?? "Demo"}</p>
+        {!IS_DEMO && (
+          <button
+            onClick={() => void signOut()}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-neutral-800 py-3 text-sm font-medium text-neutral-300 transition-all active:scale-[0.98]"
+          >
+            Abmelden
+          </button>
+        )}
+      </div>
     </div>
   );
 }

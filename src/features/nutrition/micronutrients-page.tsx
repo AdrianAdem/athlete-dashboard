@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { ChevronLeft } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
-import { USER_ID } from "@/lib/constants";
+import { uid } from "@/lib/auth";
 import { todayString } from "@/lib/utils";
 import type { NutritionLog } from "@/types/database";
 
@@ -97,7 +97,7 @@ export function MicronutrientsPage() {
     const { data: logs } = await supabase
       .from("nutrition_log")
       .select("*")
-      .eq("user_id", USER_ID)
+      .eq("user_id", uid())
       .eq("date", date);
 
     const entries = (logs ?? []) as NutritionLog[];

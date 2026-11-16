@@ -13,7 +13,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { USER_ID } from "@/lib/constants";
+import { uid } from "@/lib/auth";
 import { Input } from "@/components/ui/input";
 import { useWorkout } from "@/lib/workout-context";
 import type { SetLog } from "@/types/database";
@@ -37,7 +37,7 @@ export function TrainingLogPage() {
     const { data: plans } = await supabase
       .from("training_plans")
       .select("id")
-      .eq("user_id", USER_ID)
+      .eq("user_id", uid())
       .eq("is_active", true);
     if (!plans || plans.length === 0) {
       setLoading(false);
@@ -57,7 +57,7 @@ export function TrainingLogPage() {
     const { data: logs } = await supabase
       .from("training_logs")
       .select("id, date, sets_completed, training_exercises(name)")
-      .eq("user_id", USER_ID)
+      .eq("user_id", uid())
       .order("date", { ascending: false })
       .limit(50);
     if (logs) {

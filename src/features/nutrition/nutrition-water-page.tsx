@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
-import { USER_ID } from "@/lib/constants";
+import { uid } from "@/lib/auth";
 import { todayString, toLocalDateString } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { calculateMacros } from "@/lib/macro-calc";
@@ -390,25 +390,25 @@ export function NutritionWaterPage() {
       supabase
         .from("nutrition_log")
         .select("*")
-        .eq("user_id", USER_ID)
+        .eq("user_id", uid())
         .eq("date", selectedDate)
         .order("created_at"),
       supabase
         .from("water_log")
         .select("*")
-        .eq("user_id", USER_ID)
+        .eq("user_id", uid())
         .eq("date", selectedDate)
         .order("logged_at"),
       supabase
         .from("user_profiles")
         .select("calorie_goal, water_goal_ml, protein_goal, carbs_goal, fat_goal")
-        .eq("id", USER_ID)
+        .eq("id", uid())
         .single(),
     ]);
     const { data: wt } = await supabase
       .from("weight_log")
       .select("weight_kg")
-      .eq("user_id", USER_ID)
+      .eq("user_id", uid())
       .order("date", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -471,7 +471,7 @@ export function NutritionWaterPage() {
         supabase
           .from("custom_foods")
           .select("*")
-          .eq("user_id", USER_ID)
+          .eq("user_id", uid())
           .ilike("name", `%${value}%`)
           .limit(5)
           .then(({ data }) => data ?? []),
@@ -505,7 +505,7 @@ export function NutritionWaterPage() {
       const { data } = await supabase
         .from("custom_foods")
         .select("*")
-        .eq("user_id", USER_ID)
+        .eq("user_id", uid())
         .eq("name", name)
         .single();
       if (data) {
@@ -630,7 +630,7 @@ export function NutritionWaterPage() {
     const { data, error } = await supabase
       .from("nutrition_log")
       .insert({
-        user_id: USER_ID,
+        user_id: uid(),
         date: selectedDate,
         meal_type: activeTab as MealType,
         food_name: foodName.trim(),
@@ -669,7 +669,7 @@ export function NutritionWaterPage() {
     if (!foodName.trim() || baseCal === 0) return;
     const { error } = await supabase.from("custom_foods").upsert(
       {
-        user_id: USER_ID,
+        user_id: uid(),
         name: foodName.trim().replace(/^★\s*/, ""),
         calories_100: baseCal,
         protein_100: baseProt,
@@ -720,7 +720,7 @@ export function NutritionWaterPage() {
   const addWater = async (amount: number) => {
     const { data, error } = await supabase
       .from("water_log")
-      .insert({ user_id: USER_ID, date: selectedDate, amount_ml: amount })
+      .insert({ user_id: uid(), date: selectedDate, amount_ml: amount })
       .select()
       .single();
     if (error || !data) {

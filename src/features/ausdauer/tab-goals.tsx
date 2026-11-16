@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { Target, Flame, Check } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { USER_ID } from "@/lib/constants";
+import { uid } from "@/lib/auth";
 import type { CardioActivity } from "@/types/database";
 import { getWeekStart } from "./ausdauer-utils";
 
@@ -95,7 +95,7 @@ export function TabGoals({ activities }: { activities: CardioActivity[] }) {
       const { data } = await supabase
         .from("cardio_goals")
         .select("goal_type, target_value")
-        .eq("user_id", USER_ID);
+        .eq("user_id", uid());
       setGoals(data ?? []);
     };
     load();
@@ -106,7 +106,7 @@ export function TabGoals({ activities }: { activities: CardioActivity[] }) {
     setSaveError(false);
     const { error } = await supabase.from("cardio_goals").upsert(
       {
-        user_id: USER_ID,
+        user_id: uid(),
         goal_type: goalType,
         target_value: value,
         updated_at: new Date().toISOString(),

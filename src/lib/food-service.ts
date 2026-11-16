@@ -3,6 +3,9 @@
 //   freetext                   → Claude Haiku estimates
 
 import { IS_DEMO, demoFoodResponse } from "./demo-client";
+import { functionHeaders } from "./supabase";
+import { uid } from "./auth";
+import { userKey } from "./user-storage";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const FOOD_API = `${SUPABASE_URL}/functions/v1/food-lookup`;
@@ -57,7 +60,7 @@ async function foodFetch(endpoint: string, body: Record<string, unknown>) {
 
   const res = await fetch(`${FOOD_API}/${endpoint}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...(await functionHeaders()) },
     body: JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
@@ -89,7 +92,7 @@ export async function parseWithAI(text: string): Promise<AIFoodItem[]> {
 }
 
 // Local cache for recent foods
-const RECENT_KEY = "food_recent";
+const recentKey = () => userKey("food_recent", uid());
 const MAX_RECENT = 20;
 
 export interface RecentFood {
@@ -108,7 +111,7 @@ export interface RecentFood {
 
 export function getRecentFoods(): RecentFood[] {
   try {
-    return JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]");
+    return JSON.parse(localStorage.getItem(recentKey()) ?? "[]");
   } catch {
     return [];
   }
@@ -118,5 +121,5 @@ export function addRecentFood(food: Omit<RecentFood, "lastUsed">) {
   const recents = getRecentFoods().filter((f) => f.name !== food.name);
   recents.unshift({ ...food, lastUsed: Date.now() });
   if (recents.length > MAX_RECENT) recents.length = MAX_RECENT;
-  localStorage.setItem(RECENT_KEY, JSON.stringify(recents));
+  localStorage.setItem(recentKey(), JSON.stringify(recents));
 }

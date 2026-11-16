@@ -17,7 +17,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { getActivityDetail, getActivityStreams } from "@/lib/strava-service";
 import { supabase } from "@/lib/supabase";
-import { USER_ID } from "@/lib/constants";
+import { uid } from "@/lib/auth";
 import type { CardioActivity } from "@/types/database";
 import {
   decodePolyline,
@@ -149,7 +149,7 @@ export function ActivityDetailPage() {
         .from("cardio_activities")
         .select("*")
         .eq("id", id)
-        .eq("user_id", USER_ID)
+        .eq("user_id", uid())
         .single();
 
       if (data) {

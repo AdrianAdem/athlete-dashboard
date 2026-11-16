@@ -2,6 +2,8 @@ import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Layout } from "@/components/layout";
 import { WorkoutProvider } from "@/lib/workout-context";
+import { AuthProvider } from "@/lib/auth";
+import { AuthGate } from "@/features/auth/auth-gate";
 
 const DashboardPage = lazy(() =>
   import("@/features/dashboard/dashboard-page").then((m) => ({ default: m.DashboardPage })),
@@ -65,46 +67,53 @@ function Loading() {
 export default function App() {
   return (
     <BrowserRouter basename="/athlete-dashboard">
-      <WorkoutProvider>
-        <Suspense fallback={<Loading />}>
-          <Routes>
-            <Route element={<Layout />}>
-              {/* Dashboard */}
-              <Route path="/" element={<DashboardPage />} />
+      <AuthProvider>
+        <AuthGate>
+          <WorkoutProvider>
+            <Suspense fallback={<Loading />}>
+              <Routes>
+                <Route element={<Layout />}>
+                  {/* Dashboard */}
+                  <Route path="/" element={<DashboardPage />} />
 
-              {/* Legacy redirects */}
-              <Route path="/alltag/*" element={<Navigate to="/sport/todos" replace />} />
-              <Route path="/kalender" element={<Navigate to="/" replace />} />
-              {/* Settings */}
-              <Route path="/einstellungen" element={<SettingsPage />} />
+                  {/* Legacy redirects */}
+                  <Route path="/alltag/*" element={<Navigate to="/sport/todos" replace />} />
+                  <Route path="/kalender" element={<Navigate to="/" replace />} />
+                  {/* Settings */}
+                  <Route path="/einstellungen" element={<SettingsPage />} />
 
-              {/* Sport */}
-              <Route path="/sport" element={<SportPage />} />
-              <Route path="/sport/todos" element={<SportTodosPage />} />
-              <Route path="/sport/plan" element={<TrainingPlanPage />} />
-              <Route path="/sport/loggen" element={<TrainingLogPage />} />
-              <Route path="/sport/gewicht" element={<WeightPage />} />
+                  {/* Sport */}
+                  <Route path="/sport" element={<SportPage />} />
+                  <Route path="/sport/todos" element={<SportTodosPage />} />
+                  <Route path="/sport/plan" element={<TrainingPlanPage />} />
+                  <Route path="/sport/loggen" element={<TrainingLogPage />} />
+                  <Route path="/sport/gewicht" element={<WeightPage />} />
 
-              {/* Ernährung */}
-              <Route path="/ernaehrung" element={<NutritionWaterPage />} />
-              <Route path="/ernaehrung/mikro" element={<MicronutrientsPage />} />
-              {/* Legacy redirect */}
-              <Route path="/sport/ernaehrung" element={<Navigate to="/ernaehrung" replace />} />
-              <Route path="/sport/mikro" element={<Navigate to="/ernaehrung/mikro" replace />} />
-              {/* Ausdauer */}
-              <Route path="/ausdauer" element={<AusdauerPage />} />
-              <Route path="/ausdauer/training" element={<LiveTrainingPage />} />
-              <Route path="/ausdauer/:id" element={<ActivityDetailPage />} />
+                  {/* Ernährung */}
+                  <Route path="/ernaehrung" element={<NutritionWaterPage />} />
+                  <Route path="/ernaehrung/mikro" element={<MicronutrientsPage />} />
+                  {/* Legacy redirect */}
+                  <Route path="/sport/ernaehrung" element={<Navigate to="/ernaehrung" replace />} />
+                  <Route
+                    path="/sport/mikro"
+                    element={<Navigate to="/ernaehrung/mikro" replace />}
+                  />
+                  {/* Ausdauer */}
+                  <Route path="/ausdauer" element={<AusdauerPage />} />
+                  <Route path="/ausdauer/training" element={<LiveTrainingPage />} />
+                  <Route path="/ausdauer/:id" element={<ActivityDetailPage />} />
 
-              <Route path="/sport/statistiken" element={<SportStatsPage />} />
-              <Route path="/sport/berichte" element={<WeeklyReportPage />} />
+                  <Route path="/sport/statistiken" element={<SportStatsPage />} />
+                  <Route path="/sport/berichte" element={<WeeklyReportPage />} />
 
-              {/* Fallback */}
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Route>
-          </Routes>
-        </Suspense>
-      </WorkoutProvider>
+                  {/* Fallback */}
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Route>
+              </Routes>
+            </Suspense>
+          </WorkoutProvider>
+        </AuthGate>
+      </AuthProvider>
     </BrowserRouter>
   );
 }

@@ -11,7 +11,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { supabase } from "@/lib/supabase";
-import { USER_ID } from "@/lib/constants";
+import { uid } from "@/lib/auth";
 import { TrendingUp, Activity, Zap, BarChart3, ChevronDown, Search, X } from "lucide-react";
 import type { TrainingLog, TrainingExercise, SetLog } from "@/types/database";
 import { toLocalDateString } from "@/lib/utils";
@@ -252,7 +252,7 @@ export function SportStatsPage() {
       .from("training_logs")
       .select("*")
       .eq("exercise_id", exerciseId)
-      .eq("user_id", USER_ID)
+      .eq("user_id", uid())
       // The range tabs (1W/1M/1Y/All) used to affect only the volume chart.
       .gte("date", toLocalDateString(since))
       .order("date");
@@ -286,7 +286,7 @@ export function SportStatsPage() {
     const { data: logs } = await supabase
       .from("training_logs")
       .select("*, training_exercises(name, muscle_group)")
-      .eq("user_id", USER_ID)
+      .eq("user_id", uid())
       .gte("date", sinceStr)
       .order("date");
 
@@ -301,7 +301,7 @@ export function SportStatsPage() {
       const { data: page, error: pageError } = await supabase
         .from("training_logs")
         .select("date")
-        .eq("user_id", USER_ID)
+        .eq("user_id", uid())
         .gte("date", toLocalDateString(calSince))
         .order("date", { ascending: false })
         .range(from, from + 999);
@@ -389,7 +389,7 @@ export function SportStatsPage() {
     const { data: plans } = await supabase
       .from("training_plans")
       .select("id, is_active")
-      .eq("user_id", USER_ID);
+      .eq("user_id", uid());
     const planActive = new Map((plans ?? []).map((p) => [p.id as string, p.is_active as boolean]));
     const planIds = [...planActive.keys()];
 

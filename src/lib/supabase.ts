@@ -14,3 +14,10 @@ if (!IS_DEMO && (!supabaseUrl || !supabaseAnonKey)) {
 export const supabase: SupabaseClient = IS_DEMO
   ? (demoClient as unknown as SupabaseClient)
   : createClient(supabaseUrl, supabaseAnonKey);
+
+/** Auth headers for edge-function calls: the user's JWT when signed in. */
+export async function functionHeaders(): Promise<Record<string, string>> {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}

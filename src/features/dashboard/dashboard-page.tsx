@@ -11,7 +11,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { USER_ID } from "@/lib/constants";
+import { uid } from "@/lib/auth";
 import { todayString, cn, isRoutineActiveToday } from "@/lib/utils";
 import { useDayChange } from "@/lib/use-day-change";
 import type { DailyTodo, NutritionLog, WaterLog, WeightLog, Routine } from "@/types/database";
@@ -40,22 +40,22 @@ export function DashboardPage() {
       supabase
         .from("daily_todos")
         .select("*")
-        .eq("user_id", USER_ID)
+        .eq("user_id", uid())
         .eq("due_date", today)
         .order("created_at", { ascending: false }),
       supabase
         .from("nutrition_log")
         .select("calories, protein_g")
-        .eq("user_id", USER_ID)
+        .eq("user_id", uid())
         .eq("date", today),
-      supabase.from("water_log").select("amount_ml").eq("user_id", USER_ID).eq("date", today),
+      supabase.from("water_log").select("amount_ml").eq("user_id", uid()).eq("date", today),
       supabase
         .from("weight_log")
         .select("*")
-        .eq("user_id", USER_ID)
+        .eq("user_id", uid())
         .order("date", { ascending: false })
         .limit(1),
-      supabase.from("training_logs").select("id").eq("user_id", USER_ID).eq("date", today),
+      supabase.from("training_logs").select("id").eq("user_id", uid()).eq("date", today),
     ]);
 
     if (todosRes.data) setTodos(todosRes.data as DailyTodo[]);
@@ -75,7 +75,7 @@ export function DashboardPage() {
     const { data: profile } = await supabase
       .from("user_profiles")
       .select("calorie_goal, water_goal_ml")
-      .eq("id", USER_ID)
+      .eq("id", uid())
       .single();
     if (profile?.calorie_goal) setCalorieGoal(profile.calorie_goal);
     if (profile?.water_goal_ml) setWaterGoalMl(profile.water_goal_ml);
@@ -84,7 +84,7 @@ export function DashboardPage() {
     const { data: routinesData } = await supabase
       .from("routines")
       .select("id, name, area, weekdays, start_date, end_date")
-      .eq("user_id", USER_ID)
+      .eq("user_id", uid())
       .eq("is_active", true);
     if (routinesData) {
       const jsDay = new Date().getDay();
@@ -105,7 +105,7 @@ export function DashboardPage() {
                 .from("routine_logs")
                 .select("routine_id, completed_items")
                 .in("routine_id", routineIds)
-                .eq("user_id", USER_ID)
+                .eq("user_id", uid())
                 .eq("date", today),
               supabase.from("routine_items").select("id, routine_id").in("routine_id", routineIds),
             ])
