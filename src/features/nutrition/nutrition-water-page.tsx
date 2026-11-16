@@ -21,6 +21,8 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { uid } from "@/lib/auth";
 import { hasConsent, saveConsent } from "@/lib/consent";
+import { isNative } from "@/lib/platform";
+import { NativeBarcodeScanner } from "./native-barcode-scanner";
 import { todayString, toLocalDateString } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { calculateMacros } from "@/lib/macro-calc";
@@ -169,7 +171,7 @@ function RingProgress({
 }
 
 // Barcode Scanner Component
-function BarcodeScanner({
+function WebBarcodeScanner({
   onScan,
   onClose,
 }: {
@@ -237,6 +239,11 @@ function BarcodeScanner({
       </p>
     </div>
   );
+}
+
+// The app shell uses the native scanner; the browser keeps the web camera.
+function BarcodeScanner(props: { onScan: (code: string) => void; onClose: () => void }) {
+  return isNative ? <NativeBarcodeScanner {...props} /> : <WebBarcodeScanner {...props} />;
 }
 
 // AI Freitext Component

@@ -11,6 +11,11 @@ import {
 import { supabase } from "@/lib/supabase";
 import { uid } from "@/lib/auth";
 import { userKey } from "@/lib/user-storage";
+import {
+  cancelRestNotification,
+  ensureNotificationPermission,
+  scheduleRestNotification,
+} from "@/lib/rest-notifications";
 import { toLocalDateString } from "@/lib/utils";
 import type { TrainingExercise, SetLog } from "@/types/database";
 
@@ -148,6 +153,7 @@ export function WorkoutProvider({ children }: { children: ReactNode }) {
   const [saveError, setSaveError] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval>>(undefined);
   const restEndTime = useRef<number>(0);
+  const timerActiveRef = useRef(false);
   const [summary, setSummary] = useState<WorkoutSummary | null>(null);
 
   // Always-current view of the exercises for async save chains, which would
@@ -179,12 +185,15 @@ export function WorkoutProvider({ children }: { children: ReactNode }) {
   }, [workoutActive, exercises, currentExIdx, dayLabel, restDuration, startedAt]);
 
   useEffect(() => {
+    timerActiveRef.current = timerActive;
     if (!timerActive) return;
     const tick = () => {
       const remaining = Math.max(0, Math.round((restEndTime.current - Date.now()) / 1000));
       setRestTimer(remaining);
       if (remaining <= 0) {
         clearInterval(timerRef.current);
+        // The app is in front, no need for a second alert.
+        void cancelRestNotification();
         setTimerActive(false);
       }
     };
@@ -197,6 +206,7 @@ export function WorkoutProvider({ children }: { children: ReactNode }) {
   // time on every exercise change, and a manual adjustment overrides it.
   const startRestTimer = useCallback(() => {
     restEndTime.current = Date.now() + restDuration * 1000;
+    void scheduleRestNotification(restEndTime.current);
     setRestTimer(restDuration);
     setTimerActive(true);
   }, [restDuration]);
@@ -204,12 +214,16 @@ export function WorkoutProvider({ children }: { children: ReactNode }) {
   const skipTimer = useCallback(() => {
     clearInterval(timerRef.current);
     restEndTime.current = 0;
+    void cancelRestNotification();
     setRestTimer(0);
     setTimerActive(false);
   }, []);
 
   const adjustTimer = useCallback((delta: number) => {
     restEndTime.current = restEndTime.current + delta * 1000;
+    // Only an active timer owns a notification; after it ended, restEndTime is a
+    // stale value and must not schedule a stray one.
+    if (timerActiveRef.current) void scheduleRestNotification(restEndTime.current);
     setRestTimer((prev) => Math.max(0, prev + delta));
   }, []);
 
@@ -301,6 +315,9 @@ export function WorkoutProvider({ children }: { children: ReactNode }) {
     setDayLabel(day);
     setStartedAt(new Date());
     setWorkoutActive(true);
+    // Asked once the workout really starts, so the system dialog does not
+    // interrupt a set and never appears for a start that found no plan.
+    void ensureNotificationPermission();
   }, []);
 
   const updateSet = useCallback(
