@@ -3,3 +3,6 @@ coverage
 node_modules
 package-lock.json
 *.md
+
+# Native project is generated and edited by Xcode/Capacitor
+ios
