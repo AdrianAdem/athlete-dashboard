@@ -2,7 +2,13 @@ import { useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { CardioActivity } from "@/types/database";
-import { decodePolyline, activityAccent, getPolyline, CARTO_DARK_TILES } from "./ausdauer-utils";
+import {
+  decodePolyline,
+  activityAccent,
+  getPolyline,
+  CARTO_DARK_TILES,
+  MAP_ATTRIBUTION,
+} from "./ausdauer-utils";
 
 interface RouteEntry {
   coords: [number, number][];
@@ -19,10 +25,10 @@ export function TabRoutes({ activities }: { activities: CardioActivity[] }) {
 
     const map = L.map(mapRef.current, {
       zoomControl: false,
-      attributionControl: false,
+      attributionControl: true,
     }).setView([50.1109, 8.6821], 12);
 
-    L.tileLayer(CARTO_DARK_TILES, { maxZoom: 19 }).addTo(map);
+    L.tileLayer(CARTO_DARK_TILES, { maxZoom: 19, attribution: MAP_ATTRIBUTION }).addTo(map);
 
     // Build paired array in single pass
     const routes: RouteEntry[] = [];

@@ -26,6 +26,7 @@ import {
   formatPace,
   formatDistance,
   CARTO_DARK_TILES,
+  MAP_ATTRIBUTION,
 } from "./ausdauer-utils";
 
 const HR_ZONES = [
@@ -191,12 +192,12 @@ export function ActivityDetailPage() {
 
     const map = L.map(mapRef.current, {
       zoomControl: false,
-      attributionControl: false,
+      attributionControl: true,
       dragging: true,
       scrollWheelZoom: false,
     });
 
-    L.tileLayer(CARTO_DARK_TILES, { maxZoom: 19 }).addTo(map);
+    L.tileLayer(CARTO_DARK_TILES, { maxZoom: 19, attribution: MAP_ATTRIBUTION }).addTo(map);
 
     const line = L.polyline(coords, {
       color: "oklch(0.75 0.18 30)",

@@ -36,6 +36,7 @@ import {
   computeBadges,
   getPolyline,
   CARTO_DARK_TILES,
+  MAP_ATTRIBUTION,
 } from "./ausdauer-utils";
 import { TabStats } from "./tab-stats";
 import { TabGoals } from "./tab-goals";
@@ -176,7 +177,7 @@ function LazyRouteMap({
 
           const map = L.map(el, {
             zoomControl: false,
-            attributionControl: false,
+            attributionControl: true,
             dragging: false,
             scrollWheelZoom: false,
             doubleClickZoom: false,
@@ -184,7 +185,7 @@ function LazyRouteMap({
             keyboard: false,
           });
 
-          L.tileLayer(CARTO_DARK_TILES, { maxZoom: 19 }).addTo(map);
+          L.tileLayer(CARTO_DARK_TILES, { maxZoom: 19, attribution: MAP_ATTRIBUTION }).addTo(map);
 
           // Gradient segments
           const segCount = Math.min(coords.length - 1, 20);

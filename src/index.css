@@ -88,3 +88,13 @@
     font-size: 16px !important;
   }
 }
+
+/* Map credit: required by the OSM/CARTO licences, kept small and dark. */
+.leaflet-control-attribution {
+  background: oklch(0.145 0.006 70 / 0.7) !important;
+  color: oklch(0.6 0.008 70) !important;
+  font-size: 9px;
+}
+.leaflet-control-attribution a {
+  color: oklch(0.7 0.008 70) !important;
+}

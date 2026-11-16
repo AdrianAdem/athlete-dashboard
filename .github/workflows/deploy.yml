@@ -44,7 +44,15 @@ jobs:
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
 
       - name: SPA fallback
-        run: cp dist/index.html dist/404.html
+        run: |
+          cp dist/index.html dist/404.html
+          # Real files for the legal URLs, so the canonical form with a trailing
+          # slash answers 200 (store review, link checkers). The 404.html
+          # fallback boots the app too but reports status 404. Pages redirects
+          # the slashless form to the slash form first.
+          for page in datenschutz impressum gesundheitshinweis; do
+            mkdir -p "dist/$page" && cp dist/index.html "dist/$page/index.html"
+          done
 
       - uses: actions/configure-pages@v5
 

@@ -20,6 +20,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { uid } from "@/lib/auth";
+import { hasConsent, saveConsent } from "@/lib/consent";
 import { todayString, toLocalDateString } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { calculateMacros } from "@/lib/macro-calc";
@@ -249,9 +250,26 @@ function AIFreitext({
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  // The text leaves for a third party (Anthropic), so the first use needs a
+  // clear yes. It is stored per account with version and time, and the edge
+  // function refuses AI calls without it.
+  const [consented, setConsented] = useState<boolean | null>(null);
+  useEffect(() => {
+    hasConsent("ai_processing")
+      .then(setConsented)
+      .catch(() => setConsented(false));
+  }, []);
+  const giveConsent = async () => {
+    try {
+      await saveConsent("ai_processing");
+      setConsented(true);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
 
   const submit = async () => {
-    if (!text.trim()) return;
+    if (consented !== true || !text.trim()) return;
     setLoading(true);
     setError("");
     try {
@@ -271,6 +289,17 @@ function AIFreitext({
           <X className="h-4 w-4 text-neutral-500" />
         </button>
       </div>
+      {consented === false && (
+        <div className="space-y-2 rounded-xl bg-neutral-800 p-3 text-xs text-neutral-300">
+          <p>
+            Dein Text wird zur Schätzung an einen KI-Dienst (Anthropic, USA) gesendet. Gib keine
+            Namen oder Gesundheitsangaben über andere ein. Die Ergebnisse sind Schätzungen.
+          </p>
+          <button onClick={() => void giveConsent()} className="font-semibold text-white underline">
+            Verstanden, KI nutzen
+          </button>
+        </div>
+      )}
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
@@ -281,7 +310,7 @@ function AIFreitext({
       {error && <p className="text-xs text-red-500">{error}</p>}
       <button
         onClick={submit}
-        disabled={!text.trim() || loading}
+        disabled={consented !== true || !text.trim() || loading}
         className="w-full rounded-xl bg-white py-2.5 text-sm font-semibold text-black disabled:opacity-30 active:scale-[0.98]"
       >
         {loading ? "Analysiere..." : "Analysieren"}
@@ -1071,7 +1100,12 @@ export function NutritionWaterPage() {
               {aiResults.length > 0 && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium">AI-Ergebnisse</p>
+                    <div>
+                      <p className="text-sm font-medium">AI-Ergebnisse</p>
+                      <p className="text-[11px] text-neutral-500">
+                        Schätzung der KI, bitte prüfen.
+                      </p>
+                    </div>
                     <button
                       onClick={() => {
                         setAiResults([]);
