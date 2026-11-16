@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Plus, Check, Trash2, ChevronDown, ChevronUp, X, Pencil } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { USER_ID } from "@/lib/constants";
+import { uid } from "@/lib/auth";
 import { todayString, isRoutineActiveToday } from "@/lib/utils";
 import { useDayChange } from "@/lib/use-day-change";
 import { Input } from "@/components/ui/input";
@@ -73,19 +73,19 @@ export function SportTodosPage() {
       supabase
         .from("sport_todos")
         .select("*")
-        .eq("user_id", USER_ID)
+        .eq("user_id", uid())
         .eq("due_date", today)
         .order("created_at", { ascending: false }),
       supabase
         .from("daily_todos")
         .select("*")
-        .eq("user_id", USER_ID)
+        .eq("user_id", uid())
         .eq("due_date", today)
         .order("created_at", { ascending: false }),
       supabase
         .from("routines")
         .select("*")
-        .eq("user_id", USER_ID)
+        .eq("user_id", uid())
         .eq("is_active", true)
         .order("created_at"),
     ]);
@@ -122,7 +122,7 @@ export function SportTodosPage() {
             .from("routine_logs")
             .select("*")
             .in("routine_id", routineIds)
-            .eq("user_id", USER_ID)
+            .eq("user_id", uid())
             .eq("date", today),
         ]);
         const itemsByRoutine = new Map<string, RoutineItem[]>();
@@ -204,7 +204,7 @@ export function SportTodosPage() {
                 ...(r.log ?? {
                   id: "",
                   routine_id: r.id,
-                  user_id: USER_ID,
+                  user_id: uid(),
                   date: today,
                   created_at: "",
                 }),
@@ -220,7 +220,7 @@ export function SportTodosPage() {
     const { error } = await supabase.from("routine_logs").upsert(
       {
         routine_id: routine.id,
-        user_id: USER_ID,
+        user_id: uid(),
         date: today,
         completed_items: newCompleted,
         completed: allDone,
@@ -318,7 +318,7 @@ export function SportTodosPage() {
 
     const { data: routine, error: createError } = await supabase
       .from("routines")
-      .insert({ user_id: USER_ID, area: "sport", ...routineFields })
+      .insert({ user_id: uid(), area: "sport", ...routineFields })
       .select()
       .single();
 
@@ -390,7 +390,7 @@ export function SportTodosPage() {
     const { data, error } = await supabase
       .from("sport_todos")
       .insert({
-        user_id: USER_ID,
+        user_id: uid(),
         title: newTodoTitle.trim(),
         due_date: todayString(),
         priority: newTodoPriority,

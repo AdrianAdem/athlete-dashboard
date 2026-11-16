@@ -6,6 +6,7 @@
 // interactive for a session; nothing is persisted.
 
 import { demoTables, demoFoodCatalogue } from "./demo-data";
+import { USER_ID as DEMO_USER_ID } from "./constants";
 
 type Row = Record<string, unknown>;
 type Filter = { kind: "eq" | "gte" | "lte" | "in" | "ilike"; column: string; value: unknown };
@@ -203,8 +204,16 @@ class DemoQuery implements PromiseLike<Result<unknown>> {
   }
 }
 
+// Demo mode has a permanent signed-in user so the auth gate never shows.
+const demoSession = { access_token: "demo", user: { id: DEMO_USER_ID, email: "demo@example.com" } };
+
 export const demoClient = {
   from: (table: string) => new DemoQuery(table),
+  auth: {
+    getSession: async () => ({ data: { session: demoSession }, error: null }),
+    onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
+    signOut: async () => ({ error: null }),
+  },
 };
 
 /** Stands in for the food-lookup edge function while in demo mode. */

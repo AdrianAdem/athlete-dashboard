@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Plus, Trash2, X, GripVertical } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { USER_ID } from "@/lib/constants";
+import { uid } from "@/lib/auth";
 import { Input } from "@/components/ui/input";
 import type { TrainingPlan, TrainingExercise } from "@/types/database";
 
@@ -42,7 +42,7 @@ export function TrainingPlanPage() {
     const { data: allPlans } = await supabase
       .from("training_plans")
       .select("*")
-      .eq("user_id", USER_ID)
+      .eq("user_id", uid())
       .eq("is_active", true)
       .order("created_at", { ascending: false });
     if (allPlans && allPlans.length > 0) {
@@ -81,11 +81,11 @@ export function TrainingPlanPage() {
     const validExs = planExercises.filter((e) => e.name.trim());
     if (validExs.length === 0) return;
 
-    await supabase.from("training_plans").update({ is_active: false }).eq("user_id", USER_ID);
+    await supabase.from("training_plans").update({ is_active: false }).eq("user_id", uid());
 
     const { data: plan, error: planError } = await supabase
       .from("training_plans")
-      .insert({ user_id: USER_ID, name: planName.trim(), is_active: true })
+      .insert({ user_id: uid(), name: planName.trim(), is_active: true })
       .select()
       .single();
 

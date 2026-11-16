@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
-import { USER_ID } from "@/lib/constants";
+import { uid } from "@/lib/auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { WeeklyReport } from "@/types/database";
 
@@ -25,7 +25,7 @@ export function WeeklyReportPage() {
     const { data } = await supabase
       .from("weekly_reports")
       .select("*")
-      .eq("user_id", USER_ID)
+      .eq("user_id", uid())
       .order("week_start", { ascending: false })
       .limit(12);
     if (data) setReports(data as WeeklyReport[]);

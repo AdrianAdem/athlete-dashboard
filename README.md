@@ -222,7 +222,7 @@ scripts/
 
 ## Notes
 
-This is a personal single-user application. It uses a fixed user ID rather than Supabase Auth, and the RLS policies on app tables are permissive by design. Adding real authentication would be a prerequisite for any multi-user deployment.
+Accounts use Supabase Auth (email/password, Google; Apple behind `VITE_APPLE_LOGIN`). Auth provider setup lives in the Supabase dashboard: Site URL and redirect allowlist `https://adrianadem.github.io/athlete-dashboard/`, Google OAuth client with redirect `https://<project>.supabase.co/auth/v1/callback`. Row-level security is being tightened to per-user policies in a follow-up change; until then the tables are still open, and the edge functions still accept the legacy owner id.
 
 Garmin Connect exposes no public API for this data. The sync script targets an undocumented, unofficial endpoint set that Garmin may change or block at any time.
 

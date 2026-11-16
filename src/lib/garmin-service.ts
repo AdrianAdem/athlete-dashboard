@@ -5,7 +5,7 @@
 // retired because its public /login endpoint accepted arbitrary credentials.
 
 import { supabase } from "./supabase";
-import { USER_ID } from "./constants";
+import { uid } from "./auth";
 
 // Typed health data matching the sync script's output
 export interface GarminDailyStats {
@@ -90,7 +90,7 @@ export async function getGarminData(
   const { data, error } = await supabase
     .from("garmin_health_data")
     .select("date, data")
-    .eq("user_id", USER_ID)
+    .eq("user_id", uid())
     .gte("date", startDate)
     .lte("date", endDate)
     .order("date", { ascending: false });

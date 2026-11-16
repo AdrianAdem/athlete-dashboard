@@ -9,7 +9,8 @@ import {
   type ReactNode,
 } from "react";
 import { supabase } from "@/lib/supabase";
-import { USER_ID } from "@/lib/constants";
+import { uid } from "@/lib/auth";
+import { userKey } from "@/lib/user-storage";
 import { toLocalDateString } from "@/lib/utils";
 import type { TrainingExercise, SetLog } from "@/types/database";
 
@@ -82,7 +83,7 @@ const DEFAULT_REST = 180;
 
 // iOS kills a backgrounded PWA freely (switching to music or the camera during
 // a rest is enough). The running workout is mirrored here so it survives that.
-const STORAGE_KEY = "active_workout_v1";
+const storageKey = () => userKey("active_workout_v1", uid());
 
 interface StoredWorkout {
   exercises: WorkoutExercise[];
@@ -94,7 +95,7 @@ interface StoredWorkout {
 
 function loadStoredWorkout(): StoredWorkout | null {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(storageKey());
     if (!raw) return null;
     const stored = JSON.parse(raw) as StoredWorkout;
     const valid =
@@ -120,7 +121,7 @@ function loadStoredWorkout(): StoredWorkout | null {
     // crashed the training page on every load, with no way for the user to
     // clear it on a phone.
     try {
-      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(storageKey());
     } catch {
       // Storage unavailable: nothing to clear.
     }
@@ -170,7 +171,7 @@ export function WorkoutProvider({ children }: { children: ReactNode }) {
         restDuration,
         startedAt: startedAt.toISOString(),
       };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+      localStorage.setItem(storageKey(), JSON.stringify(stored));
     } catch {
       // Storage full or blocked: the workout still runs, it just cannot be
       // restored after a reload.
@@ -217,7 +218,7 @@ export function WorkoutProvider({ children }: { children: ReactNode }) {
     const { data: plans } = await supabase
       .from("training_plans")
       .select("id")
-      .eq("user_id", USER_ID)
+      .eq("user_id", uid())
       .eq("is_active", true);
     if (!plans || plans.length === 0) return;
     const planIds = plans.map((p) => p.id);
@@ -241,7 +242,7 @@ export function WorkoutProvider({ children }: { children: ReactNode }) {
       const { data: page, error: pageError } = await supabase
         .from("training_logs")
         .select("exercise_id, sets_completed")
-        .eq("user_id", USER_ID)
+        .eq("user_id", uid())
         .in(
           "exercise_id",
           (exs as TrainingExercise[]).map((e) => e.id),
@@ -273,7 +274,7 @@ export function WorkoutProvider({ children }: { children: ReactNode }) {
           .from("training_logs")
           .select("sets_completed")
           .eq("exercise_id", ex.id)
-          .eq("user_id", USER_ID)
+          .eq("user_id", uid())
           .order("date", { ascending: false })
           .limit(1)
           .maybeSingle();
@@ -403,7 +404,7 @@ export function WorkoutProvider({ children }: { children: ReactNode }) {
         {
           id: ex.log_id,
           exercise_id: ex.id,
-          user_id: USER_ID,
+          user_id: uid(),
           // The day the workout started, not "now": a session that runs past
           // midnight or is restored the next day stays on its own day.
           date: toLocalDateString(startedAtRef.current ?? new Date()),
@@ -496,7 +497,7 @@ export function WorkoutProvider({ children }: { children: ReactNode }) {
     setStartedAt(null);
     saveChains.current.clear();
     try {
-      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(storageKey());
     } catch {
       // Nothing to clean up if storage is unavailable.
     }
